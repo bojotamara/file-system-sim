@@ -1,2 +1,5 @@
+.vscode
 create_fs
 sample_test_*
+fs
+*.o
