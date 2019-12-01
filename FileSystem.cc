@@ -2,10 +2,23 @@
 #include <fstream>
 #include <iostream>
 #include <vector>
+#include <unistd.h>
+#include <sys/stat.h>
 
 #include "FileSystem.h"
 #include "util.h"
 
+Super_block super_block;
+
+void fs_mount(char *new_disk_name) {
+    struct stat sb;
+
+    if (stat(new_disk_name, &sb) != 0) {
+        std::cerr << "Error: Cannot find disk " << new_disk_name << std::endl;
+        return;
+    }
+
+}
 
 bool runCommand(std::vector<std::string> arguments) {
     // Separate out the command and the arguments
@@ -16,6 +29,9 @@ bool runCommand(std::vector<std::string> arguments) {
     if (command.compare("M") == 0) {
         if (arguments.size() != 1) {
             isValid = false;
+        } else {
+            char * cstr = &(arguments[0][0]);
+            fs_mount(cstr);
         }
 
     } else if (command.compare("C") == 0) {
@@ -91,7 +107,7 @@ int main(int argc, char **argv) {
     int line_number = 0;
     while (getline(command_file, command)) {
         line_number++;
-        std::cout<<command << std::endl;
+        std::cout << command << std::endl;
         std::vector<std::string> arguments = tokenize(command, " ");
         if (runCommand(arguments) == false) {
             std::cerr << "Command Error: " << command_file_name << ", " << line_number << std::endl;
