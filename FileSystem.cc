@@ -79,7 +79,7 @@ bool consistency_check_1(Super_block * temp_super_block) {
 bool consistency_check_2(Super_block * temp_super_block) {
     std::map<uint8_t, std::vector<Inode>> directory;
 
-    for (int i = 0; i < 126; i ++) {
+    for (int i = 0; i < 126; i++) {
         Inode inode = temp_super_block->inode[i];
         uint8_t parent_dir = get_parent_dir(inode);
 
@@ -101,6 +101,33 @@ bool consistency_check_2(Super_block * temp_super_block) {
     return true;
 }
 
+// If the state of an inode is free, all bits in this inode must be zero. Otherwise, the name attribute stored
+// in the inode must have at least one bit that is not zero.
+bool consistency_check_3(Super_block * temp_super_block) {
+    for (int i = 0; i < 126; i++) {
+        Inode inode = temp_super_block->inode[i];
+
+        if (is_inode_used(inode)) {
+            for (int i = 0; i < 5; i++) {
+                if (inode.name[i] != 0) {
+                    return true;
+                }
+            }
+            return false;
+        } else {//inode free
+            if (inode.dir_parent != 0 || inode.start_block != 0 || inode.used_size != 0) {
+                return false;
+            }
+            for (int i = 0; i < 5; i++) {
+                if (inode.name[i] != 0) {
+                    return false;
+                }
+            }
+        }
+    }
+    return true;
+}
+
 int check_consistency(Super_block * temp_super_block) {
     int errorCode = 0;
 
@@ -108,6 +135,8 @@ int check_consistency(Super_block * temp_super_block) {
         errorCode = 1;
     } else if (!consistency_check_2(temp_super_block)) {
         errorCode = 2;
+    } else if (!consistency_check_3(temp_super_block)) {
+        errorCode = 3;
     }
 
     return errorCode;
