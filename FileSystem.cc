@@ -4,12 +4,16 @@
 #include <vector>
 #include <set>
 #include <unordered_map>
+#include <map>
 #include <unistd.h>
+#include <string.h>
 #include <fcntl.h>
 #include <sys/stat.h>
 
 #include "FileSystem.h"
 #include "util.h"
+
+#define ROOT 127
 
 Super_block super_block;
 
@@ -18,6 +22,14 @@ bool is_inode_used(Inode inode) {
 }
 
 uint8_t get_inode_size(Inode inode) {
+    return (inode.used_size & ~(1UL << 7));
+}
+
+bool is_inode_dir(Inode inode) {
+    return (inode.dir_parent  >> 7) & 1;
+}
+
+uint8_t get_parent_dir(Inode inode) {
     return (inode.used_size & ~(1UL << 7));
 }
 
@@ -63,11 +75,39 @@ bool consistency_check_1(Super_block * temp_super_block) {
     return true;
 }
 
+// The name of every file/directory must be unique in each directory
+bool consistency_check_2(Super_block * temp_super_block) {
+    std::map<uint8_t, std::vector<Inode>> directory;
+
+    for (int i = 0; i < 126; i ++) {
+        Inode inode = temp_super_block->inode[i];
+        uint8_t parent_dir = get_parent_dir(inode);
+
+        auto it = directory.find(parent_dir);
+        if (it != directory.end()) {
+            std::vector<Inode> directoryContents = it->second;
+            for (int i = 0; i < directoryContents.size(); i++) {
+                if (strncmp(directoryContents[0].name, inode.name, 5)) {
+                    return false;
+                }
+            }
+            directoryContents.push_back(inode);
+        } else {
+            std::vector<Inode> directoryContents;
+            directoryContents.push_back(inode);
+            directory.insert({parent_dir, directoryContents});
+        }
+    }
+    return true;
+}
+
 int check_consistency(Super_block * temp_super_block) {
     int errorCode = 0;
 
     if (!consistency_check_1(temp_super_block)) {
         errorCode = 1;
+    } else if (!consistency_check_2(temp_super_block)) {
+        errorCode = 2;
     }
 
     return errorCode;
