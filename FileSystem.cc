@@ -150,6 +150,26 @@ bool consistency_check_5(Super_block * temp_super_block) {
     return true;
 }
 
+// For every inode, the index of its parent inode cannot be 126. Moreover, if the index of the parent inode
+// is between 0 and 125 inclusive, then the parent inode must be in use and marked as a directory.
+bool consistency_check_6(Super_block * temp_super_block) {
+    for (int i = 0; i < 126; i++) {
+        Inode inode = temp_super_block->inode[i];
+        if (is_inode_used(inode)) {
+            if (inode.dir_parent == 126) {
+                return false;
+            } else if (inode.dir_parent >= 0 && inode.dir_parent <= 125) {
+                Inode parent_inode = temp_super_block->inode[inode.dir_parent];
+                if (!is_inode_used(parent_inode) || !is_inode_dir(parent_inode)) {
+                    return false;
+                }
+            }
+        }
+    }
+    return true;
+}
+
+
 int check_consistency(Super_block * temp_super_block) {
     int errorCode = 0;
 
@@ -163,6 +183,8 @@ int check_consistency(Super_block * temp_super_block) {
         errorCode = 4;
     } else if (!consistency_check_5(temp_super_block)) {
         errorCode = 5;
+    } else if (!consistency_check_6(temp_super_block)) {
+        errorCode = 6;
     }
 
     return errorCode;
