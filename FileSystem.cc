@@ -132,7 +132,18 @@ bool consistency_check_3(Super_block * temp_super_block) {
 bool consistency_check_4(Super_block * temp_super_block) {
     for (int i = 0; i < 126; i++) {
         Inode inode = temp_super_block->inode[i];
-        if (!is_inode_dir(inode) && (inode.start_block < 1 || inode.start_block > 127)) {
+        if (is_inode_used(inode) && !is_inode_dir(inode) && (inode.start_block < 1 || inode.start_block > 127)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// The size and start block of an inode that is marked as a directory must be zero.
+bool consistency_check_5(Super_block * temp_super_block) {
+    for (int i = 0; i < 126; i++) {
+        Inode inode = temp_super_block->inode[i];
+        if (is_inode_used(inode) && is_inode_dir(inode) && (inode.start_block != 0 || get_inode_size(inode) != 0)) {
             return false;
         }
     }
@@ -150,6 +161,8 @@ int check_consistency(Super_block * temp_super_block) {
         errorCode = 3;
     } else if (!consistency_check_4(temp_super_block)) {
         errorCode = 4;
+    } else if (!consistency_check_5(temp_super_block)) {
+        errorCode = 5;
     }
 
     return errorCode;
