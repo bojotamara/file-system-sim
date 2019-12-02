@@ -15,7 +15,7 @@
 
 #define ROOT 127
 
-Super_block super_block;
+Super_block * super_block = NULL;
 
 bool is_inode_used(Inode inode) {
     return (inode.used_size >> 7) & 1;
@@ -215,14 +215,14 @@ void fs_mount(char *new_disk_name) {
 
     int errorCode = check_consistency(temp_super_block);
 
-    if (errorCode != 0) {
+    if (errorCode == 0) {
+        super_block = temp_super_block;
+    } else {
         std::cout << "Error: File system in " << new_disk_name << " is inconsistent";
         std::cout << " (error code: " << errorCode << ")\n";
-        close(fd);
         delete temp_super_block;
     }
 
-    delete temp_super_block;
     close(fd);
 }
 
@@ -231,6 +231,7 @@ bool runCommand(std::vector<std::string> arguments) {
     std::string command = arguments[0];
     arguments.erase(arguments.begin());
     bool isValid = true;
+    bool isMounted = super_block != NULL;
 
     if (command.compare("M") == 0) {
         if (arguments.size() != 1) {
@@ -239,7 +240,6 @@ bool runCommand(std::vector<std::string> arguments) {
             char * cstr = &(arguments[0][0]);
             fs_mount(cstr);
         }
-
     } else if (command.compare("C") == 0) {
         if (arguments.size() != 2) {
             isValid = false;
@@ -247,12 +247,16 @@ bool runCommand(std::vector<std::string> arguments) {
             isValid = false;
         } else if (stoi(arguments[1]) < 0 || stoi(arguments[1]) > 127) {
             isValid = false;
+        } else if (isValid && !isMounted) {
+            std::cerr << "Error: No file system is mounted\n";
         }
     } else if (command.compare("D") == 0) {
         if (arguments.size() != 1) {
             isValid = false;
         } else if (arguments[0].size() > 5) {
             isValid = false;
+        } else if (isValid && !isMounted) {
+            std::cerr << "Error: No file system is mounted\n";
         }
         
     } else if (command.compare("R") == 0) {
@@ -262,6 +266,8 @@ bool runCommand(std::vector<std::string> arguments) {
             isValid = false;
         } else if (stoi(arguments[1]) < 0 || stoi(arguments[1]) > 127) {
             isValid = false;
+        } else if (isValid && !isMounted) {
+            std::cerr << "Error: No file system is mounted\n";
         }
         
     } else if (command.compare("W") == 0) {
@@ -271,16 +277,22 @@ bool runCommand(std::vector<std::string> arguments) {
             isValid = false;
         } else if (stoi(arguments[1]) < 0 || stoi(arguments[1]) > 127) {
             isValid = false;
+        } else if (isValid && !isMounted) {
+            std::cerr << "Error: No file system is mounted\n";
         }
         
     } else if (command.compare("B") == 0) {
         if (arguments.size() < 1) {
             isValid = false;
+        } else if (isValid && !isMounted) {
+            std::cerr << "Error: No file system is mounted\n";
         }
         
     } else if (command.compare("L") == 0) {
         if (arguments.size() != 0) {
             isValid = false;
+        } else if (isValid && !isMounted) {
+            std::cerr << "Error: No file system is mounted\n";
         }
         
     } else if (command.compare("E") == 0) {
@@ -290,11 +302,15 @@ bool runCommand(std::vector<std::string> arguments) {
             isValid = false;
         } else if (stoi(arguments[1]) < 1 || stoi(arguments[1]) > 127) {
             isValid = false;
+        } else if (isValid && !isMounted) {
+            std::cerr << "Error: No file system is mounted\n";
         }
         
     } else if (command.compare("O") == 0) {
         if (arguments.size() != 0) {
             isValid = false;
+        } else if (isValid && !isMounted) {
+            std::cerr << "Error: No file system is mounted\n";
         }
         
     } else if (command.compare("Y") == 0) {
@@ -302,6 +318,8 @@ bool runCommand(std::vector<std::string> arguments) {
             isValid = false;
         } else if (arguments[0].size() > 5) {
             isValid = false;
+        } else if (isValid && !isMounted) {
+            std::cerr << "Error: No file system is mounted\n";
         }
         
     } else {
@@ -336,6 +354,10 @@ int main(int argc, char **argv) {
         if (runCommand(arguments) == false) {
             std::cerr << "Command Error: " << command_file_name << ", " << line_number << std::endl;
         }
+    }
+
+    if (super_block != NULL) {
+        delete super_block;
     }
 
     command_file.close();
