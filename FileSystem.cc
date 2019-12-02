@@ -128,6 +128,17 @@ bool consistency_check_3(Super_block * temp_super_block) {
     return true;
 }
 
+// The start block of every inode that is marked as a file must have a value between 1 and 127 inclusive
+bool consistency_check_4(Super_block * temp_super_block) {
+    for (int i = 0; i < 126; i++) {
+        Inode inode = temp_super_block->inode[i];
+        if (!is_inode_dir(inode) && (inode.start_block < 1 || inode.start_block > 127)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 int check_consistency(Super_block * temp_super_block) {
     int errorCode = 0;
 
@@ -137,6 +148,8 @@ int check_consistency(Super_block * temp_super_block) {
         errorCode = 2;
     } else if (!consistency_check_3(temp_super_block)) {
         errorCode = 3;
+    } else if (!consistency_check_4(temp_super_block)) {
+        errorCode = 4;
     }
 
     return errorCode;
