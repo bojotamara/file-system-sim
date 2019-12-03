@@ -5,6 +5,7 @@
 #include <set>
 #include <unordered_map>
 #include <map>
+#include <algorithm>
 #include <unistd.h>
 #include <string.h>
 #include <fcntl.h>
@@ -80,12 +81,16 @@ void write_superblock_to_disk() {
 // Blocks that are marked free in the free-space list cannot be allocated to any file. Similarly, blocks
 // marked in use in the free-space list must be allocated to exactly one file.
 bool consistency_check_1(Super_block * temp_super_block) {
-    std::set<uint8_t> free_blocks;
-    std::set<uint8_t> used_blocks;
-    uint8_t block_number = 0;
+    std::set<int> free_blocks;
+    std::set<int> used_blocks;
+    int block_number = 0;
     for (int i = 0; i < 16; i++) {
         char byte = temp_super_block->free_block_list[i];
         for (int j=7; j>=0; j--) {
+            if (block_number == 0) {// this is the superblock
+                block_number++;
+                continue;
+            }
             int bit = ((byte >> j) & 1);
             if (bit == 0) {
                 free_blocks.insert(block_number);
@@ -96,22 +101,22 @@ bool consistency_check_1(Super_block * temp_super_block) {
         }
     }
 
-    std::unordered_multimap<uint8_t, bool> inode_used_blocks;
+    std::vector<int> inode_used_blocks;
     for (int i = 0; i < 126; i ++) {
         Inode inode = temp_super_block->inode[i];
         if (is_inode_used(inode)) {
-            uint8_t fileSize = get_inode_size(inode);
-            for (uint8_t i = inode.start_block; i < inode.start_block + fileSize; i++) {
-                if (free_blocks.find(i) != free_blocks.end()) {
+            int fileSize = get_inode_size(inode);
+            for (int j = inode.start_block; j < inode.start_block + fileSize; j++) {
+                if (free_blocks.find(j) != free_blocks.end()) {
                     return false;
                 }
-                inode_used_blocks.insert(std::pair<uint8_t, bool>(i, true));
+                inode_used_blocks.push_back(j);
             }
         }
     }
 
     for (auto f: used_blocks) {
-        if ( f != 0 && inode_used_blocks.count(f) != 1) {
+        if ( f != 0 && std::count(inode_used_blocks.begin(), inode_used_blocks.end(), f) != 1) {
             return false;
         }
     }

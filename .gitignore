@@ -1,6 +1,7 @@
 .vscode
 create_fs
 sample_test_*
+consistency-check
 fs
 *.o
 input*
