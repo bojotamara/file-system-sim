@@ -14,12 +14,15 @@
 #include "FileSystem.h"
 #include "util.h"
 
+// Constants
 #define ROOT 127
 #define BLOCK_SIZE 1024
 
+// Global variables
 Super_block * super_block = NULL;
 std::string disk_name = "";
 uint8_t current_directory = ROOT;
+char buffer[BLOCK_SIZE] = {0};
 
 bool is_inode_used(Inode inode) {
     return (inode.used_size >> 7) & 1;
@@ -103,6 +106,16 @@ void write_to_block(char buff[BLOCK_SIZE], int block_number) {
     int sizeWritten = pwrite(fd, buff, BLOCK_SIZE, offset);
     if (sizeWritten < BLOCK_SIZE) {
         std::cerr << "Error: Writing to block on disk\n";
+    }
+    close(fd);
+}
+
+void read_from_block(int block_number) {
+    int fd = open(disk_name.c_str(), O_RDWR);
+    int offset = BLOCK_SIZE*block_number;
+    int sizeRead = pread(fd, buffer, BLOCK_SIZE, offset);
+    if (sizeRead < BLOCK_SIZE) {
+        std::cerr << "Error: Reading block from disk\n";
     }
     close(fd);
 }
@@ -462,6 +475,29 @@ void fs_delete(char name[5]) {
     write_superblock_to_disk();
 }
 
+void fs_read(char name[5], int block_num) {
+    Inode * inode = NULL;
+    for (int i = 0; i < 126; i++) {
+        inode = &(super_block->inode[i]);
+        if (is_inode_used(*inode) && !is_inode_dir(*inode) && get_parent_dir(*inode) == current_directory && strncmp(inode->name, name, 5) == 0) {
+            break;
+        }
+        inode = NULL;
+    }
+
+    if (inode == NULL) {
+        std::cerr << "Error: File " << name << " does not exist\n";
+        return;
+    }
+
+    if (block_num < 0 || block_num >= get_inode_size(*inode)) {
+        std::cerr << "Error: " << name << " does not have block " << block_num << std::endl;
+        return;
+    }
+
+    read_from_block(inode->start_block + block_num);
+}
+
 bool runCommand(std::vector<std::string> arguments) {
     // Separate out the command and the arguments
     std::string command = arguments[0];
@@ -509,6 +545,9 @@ bool runCommand(std::vector<std::string> arguments) {
             isValid = false;
         } else if (isValid && !isMounted) {
             std::cerr << "Error: No file system is mounted\n";
+        } else {
+            char * cstr = &(arguments[0][0]);
+            fs_read(cstr, stoi(arguments[1]));
         }
         
     } else if (command.compare("W") == 0) {
