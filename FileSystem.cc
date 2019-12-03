@@ -110,10 +110,10 @@ void write_to_block(char buff[BLOCK_SIZE], int block_number) {
     close(fd);
 }
 
-void read_from_block(int block_number) {
+void read_from_block(char buff[BLOCK_SIZE], int block_number) {
     int fd = open(disk_name.c_str(), O_RDWR);
     int offset = BLOCK_SIZE*block_number;
-    int sizeRead = pread(fd, buffer, BLOCK_SIZE, offset);
+    int sizeRead = pread(fd, buff, BLOCK_SIZE, offset);
     if (sizeRead < BLOCK_SIZE) {
         std::cerr << "Error: Reading block from disk\n";
     }
@@ -495,7 +495,30 @@ void fs_read(char name[5], int block_num) {
         return;
     }
 
-    read_from_block(inode->start_block + block_num);
+    read_from_block(buffer, inode->start_block + block_num);
+}
+
+void fs_write(char name[5], int block_num) {
+    Inode * inode = NULL;
+    for (int i = 0; i < 126; i++) {
+        inode = &(super_block->inode[i]);
+        if (is_inode_used(*inode) && !is_inode_dir(*inode) && get_parent_dir(*inode) == current_directory && strncmp(inode->name, name, 5) == 0) {
+            break;
+        }
+        inode = NULL;
+    }
+
+    if (inode == NULL) {
+        std::cerr << "Error: File " << name << " does not exist\n";
+        return;
+    }
+
+    if (block_num < 0 || block_num >= get_inode_size(*inode)) {
+        std::cerr << "Error: " << name << " does not have block " << block_num << std::endl;
+        return;
+    }
+
+    write_to_block(buffer, inode->start_block + block_num)
 }
 
 bool runCommand(std::vector<std::string> arguments) {
@@ -549,7 +572,6 @@ bool runCommand(std::vector<std::string> arguments) {
             char * cstr = &(arguments[0][0]);
             fs_read(cstr, stoi(arguments[1]));
         }
-        
     } else if (command.compare("W") == 0) {
         if (arguments.size() != 2) {
             isValid = false;
@@ -559,8 +581,10 @@ bool runCommand(std::vector<std::string> arguments) {
             isValid = false;
         } else if (isValid && !isMounted) {
             std::cerr << "Error: No file system is mounted\n";
+        } else {
+            char * cstr = &(arguments[0][0]);
+            fs_write(cstr, stoi(arguments[1]));
         }
-        
     } else if (command.compare("B") == 0) {
         if (arguments.size() < 1) {
             isValid = false;
