@@ -15,6 +15,7 @@
 #include "util.h"
 
 #define ROOT 127
+#define BLOCK_SIZE 1024
 
 Super_block * super_block = NULL;
 std::string disk_name = "";
@@ -45,35 +46,63 @@ bool is_name_set(Inode inode) {
     return false;
 }
 
-void print_superblock() {
-    int fd2 = open(disk_name.c_str(), O_RDONLY);
-    Super_block * temp_super_block = new Super_block;
-    int sizeRead = read(fd2, temp_super_block, 1024);
+void allocate_block_in_free_list(int block_number) {
+    int free_block_list_index = block_number/8;
+    int block_index = block_number % 8;
+    int bit_number = 7 - block_index;
 
-    for (int i = 0; i < 16; i++) {
-        char byte = temp_super_block->free_block_list[i];
-        for (int j=7; j>=0; j--) {
-            int bit = ((byte >> j) & 1);
-            printf("%d", bit);
-            printf("\n");
-        }
-    }
-    for (int i = 0; i < 126; i++) {
-        Inode inode = temp_super_block->inode[i];
-        std::cout << "Inode " << i << ":\n";
-        printf("Type: %d Dir parent: %d Start Block: %d UsedSize: %d isUsed: %d", is_inode_dir(inode), get_parent_dir(inode), inode.start_block, get_inode_size(inode), is_inode_used(inode));
-        printf(" Name: %s", inode.name);
-        printf("\n");
-    }
-    printf("\n");
-    close(fd2);
+    char * byte = &(super_block->free_block_list[free_block_list_index]);
+    *byte |= 1UL << bit_number;
 }
+
+void free_block_in_free_list(int block_number) {
+    int free_block_list_index = block_number/8;
+    int block_index = block_number % 8;
+    int bit_number = 7 - block_index;
+
+    char * byte = &(super_block->free_block_list[free_block_list_index]);
+    *byte &= ~(1UL << bit_number);
+}
+
+// void print_superblock() {
+//     int fd2 = open(disk_name.c_str(), O_RDONLY);
+//     Super_block * temp_super_block = new Super_block;
+//     int sizeRead = read(fd2, temp_super_block, BLOCK_SIZE);
+
+//     for (int i = 0; i < 16; i++) {
+//         char byte = temp_super_block->free_block_list[i];
+//         for (int j=7; j>=0; j--) {
+//             int bit = ((byte >> j) & 1);
+//             printf("%d", bit);
+//             printf("\n");
+//         }
+//     }
+//     for (int i = 0; i < 126; i++) {
+//         Inode inode = temp_super_block->inode[i];
+//         std::cout << "Inode " << i << ":\n";
+//         printf("Type: %d Dir parent: %d Start Block: %d UsedSize: %d isUsed: %d", is_inode_dir(inode), get_parent_dir(inode), inode.start_block, get_inode_size(inode), is_inode_used(inode));
+//         printf(" Name: %s", inode.name);
+//         printf("\n");
+//     }
+//     printf("\n");
+//     close(fd2);
+// }
 
 void write_superblock_to_disk() {
     int fd = open(disk_name.c_str(), O_RDWR);
-    int sizeWritten = write(fd, super_block, 1024);
-    if (sizeWritten < 1024) {
+    int sizeWritten = write(fd, super_block, BLOCK_SIZE);
+    if (sizeWritten < BLOCK_SIZE) {
         std::cerr << "Error: Writing superblock back to disk\n";
+    }
+    close(fd);
+}
+
+void write_to_block(char buff[BLOCK_SIZE], int block_number) {
+    int fd = open(disk_name.c_str(), O_RDWR);
+    int offset = BLOCK_SIZE*block_number;
+    int sizeWritten = pwrite(fd, buff, BLOCK_SIZE, offset);
+    if (sizeWritten < BLOCK_SIZE) {
+        std::cerr << "Error: Writing to block on disk\n";
     }
     close(fd);
 }
@@ -256,8 +285,8 @@ void fs_mount(char *new_disk_name) {
 
     // Read the superblock
     Super_block * temp_super_block = new Super_block;
-    int sizeRead = read(fd, temp_super_block, 1024);
-    if (sizeRead < 1024) {
+    int sizeRead = read(fd, temp_super_block, BLOCK_SIZE);
+    if (sizeRead < BLOCK_SIZE) {
         std::cerr << "Error: Reading superblock during mount was not successful\n";
         delete temp_super_block;
         close(fd);
@@ -277,6 +306,7 @@ void fs_mount(char *new_disk_name) {
     }
 
     close(fd);
+    // print_superblock();
 }
 
 void fs_create(char name[5], int size) {
@@ -320,8 +350,6 @@ void fs_create(char name[5], int size) {
     if (size != 0) {
         // Find the first set of contiguous blocks that can be allocated to the file by scanning
         // data blocks from 1 to 127.
-        std::vector<int> free_list_indices;
-        std::vector<int> byte_indices;
         int block_number = 0;
         for (int i = 0; i < 16; i++) {
             char byte = super_block->free_block_list[i];
@@ -333,12 +361,8 @@ void fs_create(char name[5], int size) {
                 int bit = ((byte >> j) & 1);
                 if (bit == 0) {
                     contiguous_blocks.push_back(block_number);
-                    free_list_indices.push_back(i);
-                    byte_indices.push_back(j);
                 } else if (bit == 1) {
                     contiguous_blocks.clear();
-                    free_list_indices.clear();
-                    byte_indices.clear();
                 }
                 if ((int)contiguous_blocks.size() == size) {
                     break;
@@ -356,11 +380,8 @@ void fs_create(char name[5], int size) {
             return;
         }
 
-        for (size_t i = 0; i < contiguous_blocks.size(); i++) {
-            int free_list_index = free_list_indices[i];
-            int byte_index = byte_indices[i];
-            char * byte = &(super_block->free_block_list[free_list_index]);
-            *byte |= 1UL << byte_index;
+        for (auto block: contiguous_blocks) {
+            allocate_block_in_free_list(block);
         }
     }
 
@@ -375,6 +396,50 @@ void fs_create(char name[5], int size) {
     available_inode->used_size = (uint8_t) size;
     available_inode->used_size |= 1UL << 7; // set most significant bit
     strncpy(available_inode->name, name, 5);
+
+    write_superblock_to_disk();
+}
+
+void delete_directory(char name[5], uint8_t directory) {
+    
+}
+
+void delete_file(Inode * inode) {
+    char buff[BLOCK_SIZE] = {0};
+    int size = get_inode_size(*inode);
+    for (int i = inode->start_block; i < inode->start_block + size; i++) {
+        write_to_block(buff, i);
+        free_block_in_free_list(i);
+    }
+
+    inode->dir_parent = 0;
+    inode->start_block = 0;
+    inode->used_size = 0;
+    for (int i = 0; i < 5; i++) {
+        inode->name[i] = 0;
+    }
+}
+
+void fs_delete(char name[5]) {
+    Inode * inode = NULL;
+    for (int i = 0; i < 126; i++) {
+        inode = &(super_block->inode[i]);
+        if (is_inode_used(*inode) && get_parent_dir(*inode) == current_directory && strncmp(inode->name, name, 5) == 0) {
+            break;
+        }
+        inode = NULL;
+    }
+
+    if (inode == NULL) {
+        std::cerr << "Error: File or directory " << name << " does not exist\n";
+        return;
+    }
+
+    if (is_inode_dir(*inode)) {
+        delete_directory(name, current_directory);
+    } else {
+        delete_file(inode);
+    }
 
     write_superblock_to_disk();
 }
@@ -413,8 +478,10 @@ bool runCommand(std::vector<std::string> arguments) {
             isValid = false;
         } else if (isValid && !isMounted) {
             std::cerr << "Error: No file system is mounted\n";
+        } else {
+            char * cstr = &(arguments[0][0]);
+            fs_delete(cstr);
         }
-        
     } else if (command.compare("R") == 0) {
         if (arguments.size() != 2) {
             isValid = false;
@@ -517,6 +584,7 @@ int main(int argc, char **argv) {
     }
 
     command_file.close();
+    // print_superblock();
 
     return 0;
 }
