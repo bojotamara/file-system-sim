@@ -400,10 +400,6 @@ void fs_create(char name[5], int size) {
     write_superblock_to_disk();
 }
 
-void delete_directory(char name[5], uint8_t directory) {
-    
-}
-
 void delete_file(Inode * inode) {
     char buff[BLOCK_SIZE] = {0};
     int size = get_inode_size(*inode);
@@ -420,10 +416,32 @@ void delete_file(Inode * inode) {
     }
 }
 
+// Recursive function
+void delete_directory(int directory) {
+    for (int i = 0; i < 126; i++) {
+        Inode * inode = &(super_block->inode[i]);
+        if (is_inode_used(*inode) && get_parent_dir(*inode) == directory) {
+            if (is_inode_dir(*inode)) {
+                delete_directory(i);
+            } else {
+                delete_file(inode);
+            }
+        }
+    }
+
+    super_block->inode[directory].dir_parent = 0;
+    super_block->inode[directory].start_block = 0;
+    super_block->inode[directory].used_size = 0;
+    for (int i = 0; i < 5; i++) {
+        super_block->inode[directory].name[i] = 0;
+    }
+}
+
 void fs_delete(char name[5]) {
     Inode * inode = NULL;
-    for (int i = 0; i < 126; i++) {
-        inode = &(super_block->inode[i]);
+    int inodeIndex;
+    for (inodeIndex = 0; inodeIndex < 126; inodeIndex++) {
+        inode = &(super_block->inode[inodeIndex]);
         if (is_inode_used(*inode) && get_parent_dir(*inode) == current_directory && strncmp(inode->name, name, 5) == 0) {
             break;
         }
@@ -436,7 +454,7 @@ void fs_delete(char name[5]) {
     }
 
     if (is_inode_dir(*inode)) {
-        delete_directory(name, current_directory);
+        delete_directory(inodeIndex);
     } else {
         delete_file(inode);
     }
