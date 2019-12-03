@@ -315,14 +315,14 @@ void fs_create(char name[5], int size) {
         }
     }
 
-    std::vector<uint8_t> contiguous_blocks;
+    std::vector<int> contiguous_blocks;
     // If it's a file, we have to allocate space
     if (size != 0) {
         // Find the first set of contiguous blocks that can be allocated to the file by scanning
         // data blocks from 1 to 127.
         std::vector<int> free_list_indices;
         std::vector<int> byte_indices;
-        uint8_t block_number = 0;
+        int block_number = 0;
         for (int i = 0; i < 16; i++) {
             char byte = super_block->free_block_list[i];
             for (int j=7; j>=0; j--) {
