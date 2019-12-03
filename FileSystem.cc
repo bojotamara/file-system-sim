@@ -280,59 +280,69 @@ void fs_create(char name[5], int size) {
         }
     }
 
-    // Find the first set of contiguous blocks that can be allocated to the file by scanning 
-    // data blocks from 1 to 127.
     std::vector<uint8_t> contiguous_blocks;
-    std::vector<int> free_list_indices;
-    std::vector<int> byte_indices;
-    uint8_t block_number = 0;
-    for (int i = 0; i < 16; i++) {
-        char byte = super_block->free_block_list[i];
-        for (int j=7; j>=0; j--) {
-            if (block_number == 0) {// this is the superblock
+    // If it's a file, we have to allocate space
+    if (size != 0) {
+        // Find the first set of contiguous blocks that can be allocated to the file by scanning
+        // data blocks from 1 to 127.
+        std::vector<int> free_list_indices;
+        std::vector<int> byte_indices;
+        uint8_t block_number = 0;
+        for (int i = 0; i < 16; i++) {
+            char byte = super_block->free_block_list[i];
+            for (int j=7; j>=0; j--) {
+                if (block_number == 0) {// this is the superblock
+                    block_number++;
+                    continue;
+                }
+                int bit = ((byte >> j) & 1);
+                if (bit == 0) {
+                    contiguous_blocks.push_back(block_number);
+                    free_list_indices.push_back(i);
+                    byte_indices.push_back(j);
+                } else if (bit == 1) {
+                    contiguous_blocks.clear();
+                    free_list_indices.clear();
+                    byte_indices.clear();
+                }
+                if ((int)contiguous_blocks.size() == size) {
+                    break;
+                }
                 block_number++;
-                continue;
             }
-            int bit = ((byte >> j) & 1);
-            if (bit == 0) {
-                contiguous_blocks.push_back(block_number);
-                free_list_indices.push_back(i);
-                byte_indices.push_back(j);
-            } else if (bit == 1) {
-                contiguous_blocks.clear();
-                free_list_indices.clear();
-                byte_indices.clear();
-            }
+
             if ((int)contiguous_blocks.size() == size) {
                 break;
             }
-            block_number++;
         }
 
-        if ((int)contiguous_blocks.size() == size) {
-            break;
+        if ((int)contiguous_blocks.size() != size) {
+            std::cerr << "Error: Cannot allocate " << size << " on " << disk_name << std::endl;
+            return;
+        }
+
+        for (size_t i = 0; i < contiguous_blocks.size(); i++) {
+            int free_list_index = free_list_indices[i];
+            int byte_index = byte_indices[i];
+            char * byte = &(super_block->free_block_list[free_list_index]);
+            *byte |= 1UL << byte_index;
         }
     }
 
-    if ((int)contiguous_blocks.size() != size) {
-        std::cerr << "Error: Cannot allocate " << size << " on " << disk_name << std::endl;
-        return;
+    available_inode->dir_parent = current_directory;
+    if (size == 0) {// clear bit
+        available_inode->dir_parent &= ~(1UL << 7);
+        available_inode->start_block = 0;
+    } else {// set bit
+        available_inode->dir_parent |= 1UL << 7;
+        available_inode->start_block = contiguous_blocks[0];
     }
-
-    for (size_t i = 0; i < contiguous_blocks.size(); i++) {
-        int free_list_index = free_list_indices[i];
-        int byte_index = byte_indices[i];
-        char * byte = &(super_block->free_block_list[free_list_index]);
-        *byte |= 1UL << byte_index;
-    }
+    available_inode->used_size = (uint8_t) size;
+    available_inode->used_size |= 1UL << 7; // set most significant bit
+    strncpy(available_inode->name, name, 5);
 
     //TODO
     write_superblock_to_disk();
-
-    //available_inode->dir_parent = current_directory; //NO
-    available_inode->start_block = contiguous_blocks[0];
-    //available_inode->used_size = size; //NO
-    strncpy(available_inode->name, name, 5);
 }
 
 bool runCommand(std::vector<std::string> arguments) {
