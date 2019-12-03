@@ -20,30 +20,6 @@ Super_block * super_block = NULL;
 std::string disk_name = "";
 uint8_t current_directory = ROOT;
 
-// void print_superblock() {
-//     int fd2 = open(disk_name.c_str(), O_RDONLY);
-//     Super_block * temp_super_block = new Super_block;
-//     int sizeRead = read(fd2, temp_super_block, 1024);
-
-//     for (int i = 0; i < 16; i++) {
-//         char byte = temp_super_block->free_block_list[i];
-//         for (int j=7; j>=0; j--) {
-//             int bit = ((byte >> j) & 1);
-//             printf("%d", bit);
-//             printf("\n");
-//         }
-//     }
-//     for (int i = 0; i < 126; i++) {
-//         Inode inode = temp_super_block->inode[i];
-//         std::cout << "Inode " << i << ":\n";
-//         printf("Dir parent: %d Start Block: %d UsedSize: %d", inode.dir_parent, inode.start_block, inode.used_size);
-//         printf(" Name: %s", inode.name);
-//         printf("\n");
-//     }
-//     printf("\n");
-//     close(fd2);
-// }
-
 bool is_inode_used(Inode inode) {
     return (inode.used_size >> 7) & 1;
 }
@@ -67,6 +43,30 @@ bool is_name_set(Inode inode) {
         }
     }
     return false;
+}
+
+void print_superblock() {
+    int fd2 = open(disk_name.c_str(), O_RDONLY);
+    Super_block * temp_super_block = new Super_block;
+    int sizeRead = read(fd2, temp_super_block, 1024);
+
+    for (int i = 0; i < 16; i++) {
+        char byte = temp_super_block->free_block_list[i];
+        for (int j=7; j>=0; j--) {
+            int bit = ((byte >> j) & 1);
+            printf("%d", bit);
+            printf("\n");
+        }
+    }
+    for (int i = 0; i < 126; i++) {
+        Inode inode = temp_super_block->inode[i];
+        std::cout << "Inode " << i << ":\n";
+        printf("Type: %d Dir parent: %d Start Block: %d UsedSize: %d isUsed: %d", is_inode_dir(inode), get_parent_dir(inode), inode.start_block, get_inode_size(inode), is_inode_used(inode));
+        printf(" Name: %s", inode.name);
+        printf("\n");
+    }
+    printf("\n");
+    close(fd2);
 }
 
 void write_superblock_to_disk() {
