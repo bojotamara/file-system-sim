@@ -16,6 +16,8 @@
 #define ROOT 127
 
 Super_block * super_block = NULL;
+std::string disk_name = "";
+uint8_t current_directory = ROOT;
 
 bool is_inode_used(Inode inode) {
     return (inode.used_size >> 7) & 1;
@@ -33,6 +35,19 @@ uint8_t get_parent_dir(Inode inode) {
     return (inode.used_size & ~(1UL << 7));
 }
 
+bool is_name_set(Inode inode) {
+    for (int i = 0; i < 5; i++) {
+        if (inode.name[i] != 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void write_superblock_to_disk() {
+
+}
+
 // Blocks that are marked free in the free-space list cannot be allocated to any file. Similarly, blocks
 // marked in use in the free-space list must be allocated to exactly one file.
 bool consistency_check_1(Super_block * temp_super_block) {
@@ -41,8 +56,8 @@ bool consistency_check_1(Super_block * temp_super_block) {
     uint8_t block_number = 0;
     for (int i = 0; i < 16; i++) {
         char byte = temp_super_block->free_block_list[i];
-        for (int i=7; i>=0; i--) {
-            int bit = ((byte >> i) & 1);
+        for (int j=7; j>=0; j--) {
+            int bit = ((byte >> j) & 1);
             if (bit == 0) {
                 free_blocks.insert(block_number);
             } else if (bit == 1) { // In use
@@ -83,19 +98,21 @@ bool consistency_check_2(Super_block * temp_super_block) {
         Inode inode = temp_super_block->inode[i];
         uint8_t parent_dir = get_parent_dir(inode);
 
-        auto it = directory.find(parent_dir);
-        if (it != directory.end()) {
-            std::vector<Inode> directoryContents = it->second;
-            for (int i = 0; i < directoryContents.size(); i++) {
-                if (strncmp(directoryContents[0].name, inode.name, 5)) {
-                    return false;
+        if (is_name_set(inode)) {
+            auto it = directory.find(parent_dir);
+            if (it != directory.end()) {
+                std::vector<Inode> directoryContents = it->second;
+                for (size_t i = 0; i < directoryContents.size(); i++) {
+                    if (strncmp(directoryContents[0].name, inode.name, 5) == 0) {
+                        return false;
+                    }
                 }
+                directoryContents.push_back(inode);
+            } else {
+                std::vector<Inode> directoryContents;
+                directoryContents.push_back(inode);
+                directory.insert({parent_dir, directoryContents});
             }
-            directoryContents.push_back(inode);
-        } else {
-            std::vector<Inode> directoryContents;
-            directoryContents.push_back(inode);
-            directory.insert({parent_dir, directoryContents});
         }
     }
     return true;
@@ -169,7 +186,6 @@ bool consistency_check_6(Super_block * temp_super_block) {
     return true;
 }
 
-
 int check_consistency(Super_block * temp_super_block) {
     int errorCode = 0;
 
@@ -217,6 +233,8 @@ void fs_mount(char *new_disk_name) {
 
     if (errorCode == 0) {
         super_block = temp_super_block;
+        disk_name = new_disk_name;
+        current_directory = ROOT;
     } else {
         std::cout << "Error: File system in " << new_disk_name << " is inconsistent";
         std::cout << " (error code: " << errorCode << ")\n";
@@ -224,6 +242,97 @@ void fs_mount(char *new_disk_name) {
     }
 
     close(fd);
+}
+
+void fs_create(char name[5], int size) {
+    // Need to find first available inode
+    Inode * available_inode = NULL;
+    for (int i = 0; i < 126; i++) {
+        available_inode = &(super_block->inode[i]);
+        if (!is_inode_used(*available_inode)) {
+            break;
+        } else {
+            available_inode = NULL;
+        }
+    }
+
+    // No available inodes were found
+    if (available_inode == NULL) {
+        std::cerr << "Error: Superblock in disk " << disk_name;
+        std::cerr << " is full, cannot create " << name << std::endl;
+        return;
+    }
+
+    // "." and ".." are reserved and can't be used for a file/directory
+    if (strncmp(name, ".", 5) == 0 || strncmp(name, "..", 5) == 0) {
+        std::cerr << "Error: File or directory " << name;
+        std::cerr << " already exists\n";
+        return;
+    }
+
+    // New file/directory needs to have unique name within current working directory
+    for (int i = 0; i < 126; i++) {
+        Inode inode = super_block->inode[i];
+        if (is_inode_used(inode) && get_parent_dir(inode) == current_directory && strncmp(inode.name, name, 5) == 0) {
+            std::cerr << "Error: File or directory " << name;
+            std::cerr << " already exists\n";
+            return;
+        }
+    }
+
+    // Find the first set of contiguous blocks that can be allocated to the file by scanning 
+    // data blocks from 1 to 127.
+    std::vector<uint8_t> contiguous_blocks;
+    std::vector<int> free_list_indices;
+    std::vector<int> byte_indices;
+    uint8_t block_number = 0;
+    for (int i = 0; i < 16; i++) {
+        char byte = super_block->free_block_list[i];
+        for (int j=7; j>=0; j--) {
+            if (block_number == 0) {// this is the superblock
+                block_number++;
+                continue;
+            }
+            int bit = ((byte >> j) & 1);
+            if (bit == 0) {
+                contiguous_blocks.push_back(block_number);
+                free_list_indices.push_back(i);
+                byte_indices.push_back(j);
+            } else if (bit == 1) {
+                contiguous_blocks.clear();
+                free_list_indices.clear();
+                byte_indices.clear();
+            }
+            if ((int)contiguous_blocks.size() == size) {
+                break;
+            }
+            block_number++;
+        }
+
+        if ((int)contiguous_blocks.size() == size) {
+            break;
+        }
+    }
+
+    if ((int)contiguous_blocks.size() != size) {
+        std::cerr << "Error: Cannot allocate " << size << " on " << disk_name << std::endl;
+        return;
+    }
+
+    for (size_t i = 0; i < contiguous_blocks.size(); i++) {
+        int free_list_index = free_list_indices[i];
+        int byte_index = byte_indices[i];
+        char * byte = &(super_block->free_block_list[free_list_index]);
+        *byte |= 1UL << byte_index;
+    }
+
+    //TODO
+    write_superblock_to_disk();
+
+    //available_inode->dir_parent = current_directory; //NO
+    available_inode->start_block = contiguous_blocks[0];
+    //available_inode->used_size = size; //NO
+    strncpy(available_inode->name, name, 5);
 }
 
 bool runCommand(std::vector<std::string> arguments) {
@@ -249,6 +358,9 @@ bool runCommand(std::vector<std::string> arguments) {
             isValid = false;
         } else if (isValid && !isMounted) {
             std::cerr << "Error: No file system is mounted\n";
+        } else {
+            char * cstr = &(arguments[0][0]);
+            fs_create(cstr, stoi(arguments[1]));
         }
     } else if (command.compare("D") == 0) {
         if (arguments.size() != 1) {
