@@ -19,6 +19,30 @@ Super_block * super_block = NULL;
 std::string disk_name = "";
 uint8_t current_directory = ROOT;
 
+// void print_superblock() {
+//     int fd2 = open(disk_name.c_str(), O_RDONLY);
+//     Super_block * temp_super_block = new Super_block;
+//     int sizeRead = read(fd2, temp_super_block, 1024);
+
+//     for (int i = 0; i < 16; i++) {
+//         char byte = temp_super_block->free_block_list[i];
+//         for (int j=7; j>=0; j--) {
+//             int bit = ((byte >> j) & 1);
+//             printf("%d", bit);
+//             printf("\n");
+//         }
+//     }
+//     for (int i = 0; i < 126; i++) {
+//         Inode inode = temp_super_block->inode[i];
+//         std::cout << "Inode " << i << ":\n";
+//         printf("Dir parent: %d Start Block: %d UsedSize: %d", inode.dir_parent, inode.start_block, inode.used_size);
+//         printf(" Name: %s", inode.name);
+//         printf("\n");
+//     }
+//     printf("\n");
+//     close(fd2);
+// }
+
 bool is_inode_used(Inode inode) {
     return (inode.used_size >> 7) & 1;
 }
@@ -32,7 +56,7 @@ bool is_inode_dir(Inode inode) {
 }
 
 uint8_t get_parent_dir(Inode inode) {
-    return (inode.used_size & ~(1UL << 7));
+    return (inode.dir_parent & ~(1UL << 7));
 }
 
 bool is_name_set(Inode inode) {
@@ -45,7 +69,12 @@ bool is_name_set(Inode inode) {
 }
 
 void write_superblock_to_disk() {
-
+    int fd = open(disk_name.c_str(), O_RDWR);
+    int sizeWritten = write(fd, super_block, 1024);
+    if (sizeWritten < 1024) {
+        std::cerr << "Error: Writing superblock back to disk\n";
+    }
+    close(fd);
 }
 
 // Blocks that are marked free in the free-space list cannot be allocated to any file. Similarly, blocks
@@ -227,6 +256,7 @@ void fs_mount(char *new_disk_name) {
         std::cerr << "Error: Reading superblock during mount was not successful\n";
         delete temp_super_block;
         close(fd);
+        return;
     }
 
     int errorCode = check_consistency(temp_super_block);
@@ -330,18 +360,17 @@ void fs_create(char name[5], int size) {
     }
 
     available_inode->dir_parent = current_directory;
-    if (size == 0) {// clear bit
-        available_inode->dir_parent &= ~(1UL << 7);
-        available_inode->start_block = 0;
-    } else {// set bit
+    if (size == 0) {// set bit
         available_inode->dir_parent |= 1UL << 7;
+        available_inode->start_block = 0;
+    } else {// clear bit
+        available_inode->dir_parent &= ~(1UL << 7);
         available_inode->start_block = contiguous_blocks[0];
     }
     available_inode->used_size = (uint8_t) size;
     available_inode->used_size |= 1UL << 7; // set most significant bit
     strncpy(available_inode->name, name, 5);
 
-    //TODO
     write_superblock_to_disk();
 }
 
