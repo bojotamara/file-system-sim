@@ -22,7 +22,7 @@
 Super_block * super_block = NULL;
 std::string disk_name = "";
 uint8_t current_directory = ROOT;
-char buffer[BLOCK_SIZE] = {0};
+uint8_t buffer[BLOCK_SIZE] = {0};
 
 bool is_inode_used(Inode inode) {
     return (inode.used_size >> 7) & 1;
@@ -100,7 +100,7 @@ void write_superblock_to_disk() {
     close(fd);
 }
 
-void write_to_block(char buff[BLOCK_SIZE], int block_number) {
+void write_to_block(uint8_t buff[BLOCK_SIZE], int block_number) {
     int fd = open(disk_name.c_str(), O_RDWR);
     int offset = BLOCK_SIZE*block_number;
     int sizeWritten = pwrite(fd, buff, BLOCK_SIZE, offset);
@@ -110,7 +110,7 @@ void write_to_block(char buff[BLOCK_SIZE], int block_number) {
     close(fd);
 }
 
-void read_from_block(char buff[BLOCK_SIZE], int block_number) {
+void read_from_block(uint8_t buff[BLOCK_SIZE], int block_number) {
     int fd = open(disk_name.c_str(), O_RDWR);
     int offset = BLOCK_SIZE*block_number;
     int sizeRead = pread(fd, buff, BLOCK_SIZE, offset);
@@ -414,7 +414,7 @@ void fs_create(char name[5], int size) {
 }
 
 void delete_file(Inode * inode) {
-    char buff[BLOCK_SIZE] = {0};
+    uint8_t buff[BLOCK_SIZE] = {0};
     int size = get_inode_size(*inode);
     for (int i = inode->start_block; i < inode->start_block + size; i++) {
         write_to_block(buff, i);
@@ -518,7 +518,15 @@ void fs_write(char name[5], int block_num) {
         return;
     }
 
-    write_to_block(buffer, inode->start_block + block_num)
+    write_to_block(buffer, inode->start_block + block_num);
+}
+
+void fs_buff(uint8_t buff[1024], int size) {
+    //Flush the buffer
+    for (int i = 0; i < BLOCK_SIZE; i ++) {
+        buffer[i] = 0;
+    }
+    memcpy(buffer, buff, size);
 }
 
 bool runCommand(std::vector<std::string> arguments) {
@@ -542,7 +550,7 @@ bool runCommand(std::vector<std::string> arguments) {
             isValid = false;
         } else if (stoi(arguments[1]) < 0 || stoi(arguments[1]) > 127) {
             isValid = false;
-        } else if (isValid && !isMounted) {
+        } else if (!isMounted) {
             std::cerr << "Error: No file system is mounted\n";
         } else {
             char * cstr = &(arguments[0][0]);
@@ -553,7 +561,7 @@ bool runCommand(std::vector<std::string> arguments) {
             isValid = false;
         } else if (arguments[0].size() > 5) {
             isValid = false;
-        } else if (isValid && !isMounted) {
+        } else if (!isMounted) {
             std::cerr << "Error: No file system is mounted\n";
         } else {
             char * cstr = &(arguments[0][0]);
@@ -564,9 +572,9 @@ bool runCommand(std::vector<std::string> arguments) {
             isValid = false;
         } else if (arguments[0].size() > 5) {
             isValid = false;
-        } else if (stoi(arguments[1]) < 0 || stoi(arguments[1]) > 127) {
+        } else if (stoi(arguments[1]) < 0 || stoi(arguments[1]) > 126) {
             isValid = false;
-        } else if (isValid && !isMounted) {
+        } else if (!isMounted) {
             std::cerr << "Error: No file system is mounted\n";
         } else {
             char * cstr = &(arguments[0][0]);
@@ -577,9 +585,9 @@ bool runCommand(std::vector<std::string> arguments) {
             isValid = false;
         } else if (arguments[0].size() > 5) {
             isValid = false;
-        } else if (stoi(arguments[1]) < 0 || stoi(arguments[1]) > 127) {
+        } else if (stoi(arguments[1]) < 0 || stoi(arguments[1]) > 126) {
             isValid = false;
-        } else if (isValid && !isMounted) {
+        } else if (!isMounted) {
             std::cerr << "Error: No file system is mounted\n";
         } else {
             char * cstr = &(arguments[0][0]);
@@ -588,14 +596,24 @@ bool runCommand(std::vector<std::string> arguments) {
     } else if (command.compare("B") == 0) {
         if (arguments.size() < 1) {
             isValid = false;
-        } else if (isValid && !isMounted) {
-            std::cerr << "Error: No file system is mounted\n";
+        } else {
+            std::string message = arguments[0];
+            message.erase(0, message.find_first_not_of(" "));
+
+            if (message.size() > BLOCK_SIZE || message.size() < 1) {
+                isValid = false;
+            } else if (!isMounted) {
+                std::cerr << "Error: No file system is mounted\n";
+            } else {
+                uint8_t * buff = (uint8_t *) &(message[0]);
+                fs_buff(buff, message.size());
+            }
         }
         
     } else if (command.compare("L") == 0) {
         if (arguments.size() != 0) {
             isValid = false;
-        } else if (isValid && !isMounted) {
+        } else if (!isMounted) {
             std::cerr << "Error: No file system is mounted\n";
         }
         
@@ -606,14 +624,14 @@ bool runCommand(std::vector<std::string> arguments) {
             isValid = false;
         } else if (stoi(arguments[1]) < 1 || stoi(arguments[1]) > 127) {
             isValid = false;
-        } else if (isValid && !isMounted) {
+        } else if (!isMounted) {
             std::cerr << "Error: No file system is mounted\n";
         }
         
     } else if (command.compare("O") == 0) {
         if (arguments.size() != 0) {
             isValid = false;
-        } else if (isValid && !isMounted) {
+        } else if (!isMounted) {
             std::cerr << "Error: No file system is mounted\n";
         }
         
@@ -622,7 +640,7 @@ bool runCommand(std::vector<std::string> arguments) {
             isValid = false;
         } else if (arguments[0].size() > 5) {
             isValid = false;
-        } else if (isValid && !isMounted) {
+        } else if (!isMounted) {
             std::cerr << "Error: No file system is mounted\n";
         }
         
@@ -654,7 +672,17 @@ int main(int argc, char **argv) {
     int line_number = 0;
     while (getline(command_file, command)) {
         line_number++;
-        std::vector<std::string> arguments = tokenize(command, " ");
+        std::vector<std::string> arguments;
+        if (command.at(0) == 'B') {
+            char * command_cstr = const_cast<char*> (command.c_str());
+            char * command_first_arg = strsep(&command_cstr, " ");
+            arguments.push_back(std::string(command_first_arg));
+            if (command_cstr != NULL) {
+                arguments.push_back(std::string(command_cstr));
+            }
+        } else {
+            arguments = tokenize(command, " ");
+        }
         if (runCommand(arguments) == false) {
             std::cerr << "Command Error: " << command_file_name << ", " << line_number << std::endl;
         }
