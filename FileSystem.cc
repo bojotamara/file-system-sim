@@ -529,6 +529,37 @@ void fs_buff(uint8_t buff[1024], int size) {
     memcpy(buffer, buff, size);
 }
 
+void fs_cd(char name[5]) {
+    if (strncmp(name, ".", 5) == 0) {
+        // Stay at the current directory
+        return;
+    } else if (strncmp(name, "..", 5) == 0) {
+        if (current_directory != ROOT) {
+            current_directory = get_parent_dir(super_block->inode[current_directory]);
+        }
+        return;
+    }
+
+    bool directory_found = false;
+    int inodeIndex;
+    for (inodeIndex = 0; inodeIndex < 126; inodeIndex++) {
+        Inode inode = super_block->inode[inodeIndex];
+        if (is_inode_used(inode) &&
+                    is_inode_dir(inode) &&
+                    get_parent_dir(inode) == current_directory &&
+                    strncmp(name, inode.name, 5) == 0) {
+            directory_found = true;
+            break;
+        }
+    }
+
+    if (directory_found) {
+        current_directory = inodeIndex;
+    } else {
+        std::cerr << "Error: Directory " << name << " does not exist\n";
+    }
+}
+
 bool runCommand(std::vector<std::string> arguments) {
     // Separate out the command and the arguments
     std::string command = arguments[0];
@@ -609,7 +640,6 @@ bool runCommand(std::vector<std::string> arguments) {
                 fs_buff(buff, message.size());
             }
         }
-        
     } else if (command.compare("L") == 0) {
         if (arguments.size() != 0) {
             isValid = false;
@@ -642,8 +672,10 @@ bool runCommand(std::vector<std::string> arguments) {
             isValid = false;
         } else if (!isMounted) {
             std::cerr << "Error: No file system is mounted\n";
+        } else {
+            char * cstr = &(arguments[0][0]);
+            fs_cd(cstr);
         }
-        
     } else {
         return false;
     }
