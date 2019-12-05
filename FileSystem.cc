@@ -11,6 +11,7 @@
 #include "FileSystem.h"
 #include "ConsistencyCheck.h"
 #include "InodeHelper.h"
+#include "IO.h"
 #include "Util.h"
 
 // Global variables
@@ -18,31 +19,6 @@ Super_block * super_block = NULL;
 std::string disk_name = "";
 uint8_t current_directory = ROOT;
 uint8_t buffer[BLOCK_SIZE] = {0};
-
-void allocate_block_in_free_list(int block_number) {
-    int free_block_list_index = block_number/8;
-    int bit_number = 7 - (block_number % 8);
-
-    char * byte = &(super_block->free_block_list[free_block_list_index]);
-    *byte |= 1UL << bit_number;
-}
-
-void free_block_in_free_list(int block_number) {
-    int free_block_list_index = block_number/8;
-    int bit_number = 7 - (block_number % 8);
-
-    char * byte = &(super_block->free_block_list[free_block_list_index]);
-    *byte &= ~(1UL << bit_number);
-}
-
-bool is_block_free(int block_number) {
-    int free_block_list_index = block_number/8;
-    int bit_number = 7 - (block_number % 8);
-    char byte = super_block->free_block_list[free_block_list_index];
-    int bit = ((byte >> bit_number) & 1);
-
-    return !bit;
-}
 
 // void print_superblock() {
 //     int fd2 = open(disk_name.c_str(), O_RDONLY);
@@ -68,38 +44,13 @@ bool is_block_free(int block_number) {
 //     close(fd2);
 // }
 
-void write_superblock_to_disk() {
-    int fd = open(disk_name.c_str(), O_RDWR);
-    int sizeWritten = write(fd, super_block, BLOCK_SIZE);
-    if (sizeWritten < BLOCK_SIZE) {
-        std::cerr << "Error: Writing superblock back to disk\n";
-    }
-    close(fd);
-}
-
-void write_to_block(int fd, uint8_t buff[BLOCK_SIZE], int block_number) {
-    int offset = BLOCK_SIZE*block_number;
-    int sizeWritten = pwrite(fd, buff, BLOCK_SIZE, offset);
-    if (sizeWritten < BLOCK_SIZE) {
-        std::cerr << "Error: Writing to block on disk\n";
-    }
-}
-
-void read_from_block(int fd, uint8_t buff[BLOCK_SIZE], int block_number) {
-    int offset = BLOCK_SIZE*block_number;
-    int sizeRead = pread(fd, buff, BLOCK_SIZE, offset);
-    if (sizeRead < BLOCK_SIZE) {
-        std::cerr << "Error: Reading block from disk\n";
-    }
-}
-
 std::vector<int> get_contiguous_blocks(int size, int start_block = 1, int end_block = 128) {
     // Find the first set of contiguous blocks that can be allocated to the file by scanning
     // data blocks from 1 to 127.
     std::vector<int> contiguous_blocks;
     int block_number = start_block;
     while (block_number < end_block) {
-        if (is_block_free(block_number)) {
+        if (is_block_free(block_number, super_block)) {
             contiguous_blocks.push_back(block_number);
         } else {
             contiguous_blocks.clear();
@@ -111,23 +62,6 @@ std::vector<int> get_contiguous_blocks(int size, int start_block = 1, int end_bl
     }
     contiguous_blocks.clear();
     return contiguous_blocks;
-}
-
-void copy_file_to_blocks(Inode * inode, std::vector<int> destination_blocks) {
-    for (auto block: destination_blocks) {
-        allocate_block_in_free_list(block);
-    }
-    int currentSize = get_inode_size(*inode);
-    int destinationIndex = 0;
-    int fd = open(disk_name.c_str(), O_RDWR);
-    for (int i = inode->start_block; i < inode->start_block + currentSize; i++) {
-        uint8_t buff[BLOCK_SIZE] = {0};
-        read_from_block(fd, buff, i);
-        write_to_block(fd, buff, destination_blocks[destinationIndex]);
-        destinationIndex++;
-    }
-    close(fd);
-    inode->start_block = destination_blocks[0];
 }
 
 void fs_mount(char *new_disk_name) {
@@ -216,7 +150,7 @@ void fs_create(char name[5], int size) {
         }
 
         for (auto block: contiguous_blocks) {
-            allocate_block_in_free_list(block);
+            allocate_block_in_free_list(block, super_block);
         }
     }
 
@@ -232,46 +166,7 @@ void fs_create(char name[5], int size) {
     set_inode_size(available_inode, size);
     strncpy(available_inode->name, name, 5);
 
-    write_superblock_to_disk();
-}
-
-void delete_file(Inode * inode) {
-    uint8_t buff[BLOCK_SIZE] = {0};
-    int size = get_inode_size(*inode);
-    int fd = open(disk_name.c_str(), O_RDWR);
-    for (int i = inode->start_block; i < inode->start_block + size; i++) {
-        write_to_block(fd, buff, i);
-        free_block_in_free_list(i);
-    }
-    close(fd);
-
-    inode->dir_parent = 0;
-    inode->start_block = 0;
-    inode->used_size = 0;
-    for (int i = 0; i < 5; i++) {
-        inode->name[i] = 0;
-    }
-}
-
-// Recursive function
-void delete_directory(int directory) {
-    for (int i = 0; i < 126; i++) {
-        Inode * inode = &(super_block->inode[i]);
-        if (is_inode_used(*inode) && get_parent_dir(*inode) == directory) {
-            if (is_inode_dir(*inode)) {
-                delete_directory(i);
-            } else {
-                delete_file(inode);
-            }
-        }
-    }
-
-    super_block->inode[directory].dir_parent = 0;
-    super_block->inode[directory].start_block = 0;
-    super_block->inode[directory].used_size = 0;
-    for (int i = 0; i < 5; i++) {
-        super_block->inode[directory].name[i] = 0;
-    }
+    write_superblock_to_disk(disk_name, super_block);
 }
 
 void fs_delete(char name[5]) {
@@ -291,12 +186,12 @@ void fs_delete(char name[5]) {
     }
 
     if (is_inode_dir(*inode)) {
-        delete_directory(inodeIndex);
+        delete_directory(inodeIndex, disk_name, super_block);
     } else {
-        delete_file(inode);
+        delete_file(inode, disk_name, super_block);
     }
 
-    write_superblock_to_disk();
+    write_superblock_to_disk(disk_name, super_block);
 }
 
 void fs_read(char name[5], int block_num) {
@@ -447,7 +342,7 @@ void fs_resize(char name[5], int new_size) {
         int fd = open(disk_name.c_str(), O_RDWR);
         for (int i = inode->start_block + new_size; i < inode->start_block + current_size; i++) {
             write_to_block(fd, buff, i);
-            free_block_in_free_list(i);
+            free_block_in_free_list(i, super_block);
         }
         close(fd);
     } else if (new_size > current_size) {
@@ -456,24 +351,24 @@ void fs_resize(char name[5], int new_size) {
         //Not enough blocks in the next blocks
         if (contiguous_blocks.empty()) {
             for (int i = inode->start_block; i < inode->start_block + current_size; i++) {
-                free_block_in_free_list(i);
+                free_block_in_free_list(i, super_block);
             }
             contiguous_blocks = get_contiguous_blocks(new_size);
             if (contiguous_blocks.empty()) {
                 for (int i = inode->start_block; i < inode->start_block + current_size; i++) {
-                    allocate_block_in_free_list(i);
+                    allocate_block_in_free_list(i, super_block);
                 }
                 std::cerr << "Error: File " << name << " cannot expand to size " << new_size << std::endl;
                 return;
             } else {
-                copy_file_to_blocks(inode, contiguous_blocks);
+                copy_file_to_blocks(inode, disk_name, super_block, contiguous_blocks);
             }
         } else {// Enough blocks available
             uint8_t buff[BLOCK_SIZE] = {0};
             int fd = open(disk_name.c_str(), O_RDWR);
             for (auto block: contiguous_blocks) {
                 write_to_block(fd, buff, block);
-                allocate_block_in_free_list(block);
+                allocate_block_in_free_list(block, super_block);
             }
             close(fd);
         }
@@ -482,7 +377,7 @@ void fs_resize(char name[5], int new_size) {
     }
 
     set_inode_size(inode, new_size);
-    write_superblock_to_disk();
+    write_superblock_to_disk(disk_name, super_block);
 }
 
 void fs_defrag() {
@@ -503,7 +398,7 @@ void fs_defrag() {
         Inode * inode = f.second;
         uint8_t new_start_block = f.first;
         while (new_start_block > 0) {
-            if (!is_block_free(new_start_block - 1)) {
+            if (!is_block_free(new_start_block - 1, super_block)) {
                 break;
             }
             new_start_block--;
@@ -524,8 +419,8 @@ void fs_defrag() {
             uint8_t clear[BLOCK_SIZE] = {0};
             write_to_block(fd, clear, old_block);
 
-            free_block_in_free_list(old_block);
-            allocate_block_in_free_list(new_block);
+            free_block_in_free_list(old_block, super_block);
+            allocate_block_in_free_list(new_block, super_block);
         }
 
         inode->start_block = new_start_block;
@@ -533,7 +428,7 @@ void fs_defrag() {
 
     if (!sortedInodes.empty()) {
         close(fd);
-        write_superblock_to_disk();
+        write_superblock_to_disk(disk_name, super_block);
     }
 }
 
