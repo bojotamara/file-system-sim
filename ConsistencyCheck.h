@@ -2,4 +2,4 @@
 
 #include "FileSystem.h"
 
-int check_consistency(Super_block * temp_super_block);
+int check_consistency(Super_block * super_block);
