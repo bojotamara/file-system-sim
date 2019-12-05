@@ -56,8 +56,7 @@ bool is_name_set(Inode inode) {
 
 void allocate_block_in_free_list(int block_number) {
     int free_block_list_index = block_number/8;
-    int block_index = block_number % 8;
-    int bit_number = 7 - block_index;
+    int bit_number = 7 - (block_number % 8);
 
     char * byte = &(super_block->free_block_list[free_block_list_index]);
     *byte |= 1UL << bit_number;
@@ -65,11 +64,19 @@ void allocate_block_in_free_list(int block_number) {
 
 void free_block_in_free_list(int block_number) {
     int free_block_list_index = block_number/8;
-    int block_index = block_number % 8;
-    int bit_number = 7 - block_index;
+    int bit_number = 7 - (block_number % 8);
 
     char * byte = &(super_block->free_block_list[free_block_list_index]);
     *byte &= ~(1UL << bit_number);
+}
+
+bool is_block_free(int block_number) {
+    int free_block_list_index = block_number/8;
+    int bit_number = 7 - (block_number % 8);
+    char byte = super_block->free_block_list[free_block_list_index];
+    int bit = ((byte >> bit_number) & 1);
+
+    return !bit;
 }
 
 // void print_superblock() {
@@ -105,24 +112,20 @@ void write_superblock_to_disk() {
     close(fd);
 }
 
-void write_to_block(uint8_t buff[BLOCK_SIZE], int block_number) {
-    int fd = open(disk_name.c_str(), O_RDWR);
+void write_to_block(int fd, uint8_t buff[BLOCK_SIZE], int block_number) {
     int offset = BLOCK_SIZE*block_number;
     int sizeWritten = pwrite(fd, buff, BLOCK_SIZE, offset);
     if (sizeWritten < BLOCK_SIZE) {
         std::cerr << "Error: Writing to block on disk\n";
     }
-    close(fd);
 }
 
-void read_from_block(uint8_t buff[BLOCK_SIZE], int block_number) {
-    int fd = open(disk_name.c_str(), O_RDWR);
+void read_from_block(int fd, uint8_t buff[BLOCK_SIZE], int block_number) {
     int offset = BLOCK_SIZE*block_number;
     int sizeRead = pread(fd, buff, BLOCK_SIZE, offset);
     if (sizeRead < BLOCK_SIZE) {
         std::cerr << "Error: Reading block from disk\n";
     }
-    close(fd);
 }
 
 std::vector<int> get_contiguous_blocks(int size, int start_block = 1, int end_block = 128) {
@@ -131,14 +134,9 @@ std::vector<int> get_contiguous_blocks(int size, int start_block = 1, int end_bl
     std::vector<int> contiguous_blocks;
     int block_number = start_block;
     while (block_number < end_block) {
-        int free_block_list_index = block_number/8;
-        int bit_number = 7 - (block_number % 8);
-        char byte = super_block->free_block_list[free_block_list_index];
-
-        int bit = ((byte >> bit_number) & 1);
-        if (bit == 0) {
+        if (is_block_free(block_number)) {
             contiguous_blocks.push_back(block_number);
-        } else if (bit == 1) {
+        } else {
             contiguous_blocks.clear();
         }
         if ((int)contiguous_blocks.size() == size) {
@@ -157,12 +155,14 @@ void copy_file_to_blocks(Inode * inode, std::vector<int> destination_blocks) {
     //TODO: IF PERFORMANCE IS BAD MIGHT HAVE 2 change
     int currentSize = get_inode_size(*inode);
     int destinationIndex = 0;
+    int fd = open(disk_name.c_str(), O_RDWR);
     for (int i = inode->start_block; i < inode->start_block + currentSize; i++) {
         uint8_t buff[BLOCK_SIZE] = {0};
-        read_from_block(buff, i);
-        write_to_block(buff, destination_blocks[destinationIndex]);
+        read_from_block(fd, buff, i);
+        write_to_block(fd, buff, destination_blocks[destinationIndex]);
         destinationIndex++;
     }
+    close(fd);
     inode->start_block = destination_blocks[0];
 }
 
@@ -365,7 +365,6 @@ void fs_mount(char *new_disk_name) {
     }
 
     close(fd);
-    // print_superblock();
 }
 
 void fs_create(char name[5], int size) {
@@ -437,10 +436,12 @@ void fs_create(char name[5], int size) {
 void delete_file(Inode * inode) {
     uint8_t buff[BLOCK_SIZE] = {0};
     int size = get_inode_size(*inode);
+    int fd = open(disk_name.c_str(), O_RDWR);
     for (int i = inode->start_block; i < inode->start_block + size; i++) {
-        write_to_block(buff, i);
+        write_to_block(fd, buff, i);
         free_block_in_free_list(i);
     }
+    close(fd);
 
     inode->dir_parent = 0;
     inode->start_block = 0;
@@ -515,8 +516,9 @@ void fs_read(char name[5], int block_num) {
         std::cerr << "Error: " << name << " does not have block " << block_num << std::endl;
         return;
     }
-
-    read_from_block(buffer, inode->start_block + block_num);
+    int fd = open(disk_name.c_str(), O_RDWR);
+    read_from_block(fd, buffer, inode->start_block + block_num);
+    close(fd);
 }
 
 void fs_write(char name[5], int block_num) {
@@ -538,8 +540,9 @@ void fs_write(char name[5], int block_num) {
         std::cerr << "Error: " << name << " does not have block " << block_num << std::endl;
         return;
     }
-
-    write_to_block(buffer, inode->start_block + block_num);
+    int fd = open(disk_name.c_str(), O_RDWR);
+    write_to_block(fd, buffer, inode->start_block + block_num);
+    close(fd);
 }
 
 void fs_buff(uint8_t buff[1024], int size) {
@@ -571,10 +574,12 @@ void fs_resize(char name[5], int new_size) {
     int current_size = get_inode_size(*inode);
     if (new_size < current_size) {
         uint8_t buff[BLOCK_SIZE] = {0};
+        int fd = open(disk_name.c_str(), O_RDWR);
         for (int i = inode->start_block + new_size; i < inode->start_block + current_size; i++) {
-            write_to_block(buff, i);
+            write_to_block(fd, buff, i);
             free_block_in_free_list(i);
         }
+        close(fd);
     } else if (new_size > current_size) {
         std::vector<int> contiguous_blocks = get_contiguous_blocks(new_size - current_size, inode->start_block + current_size, inode->start_block + new_size);
 
@@ -595,10 +600,12 @@ void fs_resize(char name[5], int new_size) {
             }
         } else {// Enough blocks available
             uint8_t buff[BLOCK_SIZE] = {0};
+            int fd = open(disk_name.c_str(), O_RDWR);
             for (auto block: contiguous_blocks) {
-                write_to_block(buff, block);
+                write_to_block(fd, buff, block);
                 allocate_block_in_free_list(block);
             }
+            close(fd);
         }
     } else {
         return;
@@ -606,6 +613,58 @@ void fs_resize(char name[5], int new_size) {
 
     set_inode_size(inode, new_size);
     write_superblock_to_disk();
+}
+
+void fs_defrag() {
+    std::map<uint8_t, Inode*> sortedInodes;
+    for (int i = 0; i < 126; i++) {
+        Inode * inode = &(super_block->inode[i]);
+        if (is_inode_used(*inode)) {
+            sortedInodes.insert({inode->start_block, inode});
+        }
+    }
+
+    int fd = 0;
+    if (!sortedInodes.empty()) {
+        fd = open(disk_name.c_str(), O_RDWR);
+    }
+
+    for (auto f: sortedInodes) {
+        Inode * inode = f.second;
+        uint8_t new_start_block = f.first;
+        while (new_start_block > 0) {
+            if (!is_block_free(new_start_block - 1)) {
+                break;
+            }
+            new_start_block--;
+        }
+        // Can't move this file left
+        if (new_start_block == f.first) {
+            continue;
+        }
+
+        int size = get_inode_size(*inode);
+        for (int i = 0; i < size; i++) {
+            int old_block = inode->start_block + i;
+            int new_block = new_start_block + i;
+
+            uint8_t buff[BLOCK_SIZE] = {0};
+            read_from_block(fd, buff, old_block);
+            write_to_block(fd, buff, new_block);
+            uint8_t clear[BLOCK_SIZE] = {0};
+            write_to_block(fd, clear, old_block);
+
+            free_block_in_free_list(old_block);
+            allocate_block_in_free_list(new_block);
+        }
+
+        inode->start_block = new_start_block;
+    }
+
+    if (!sortedInodes.empty()) {
+        close(fd);
+        write_superblock_to_disk();
+    }
 }
 
 void fs_cd(char name[5]) {
@@ -744,6 +803,8 @@ bool runCommand(std::vector<std::string> arguments) {
             isValid = false;
         } else if (!isMounted) {
             std::cerr << "Error: No file system is mounted\n";
+        } else {
+            fs_defrag();
         }
         
     } else if (command.compare("Y") == 0) {
