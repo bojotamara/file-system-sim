@@ -552,6 +552,60 @@ void fs_buff(uint8_t buff[1024], int size) {
     memcpy(buffer, buff, size);
 }
 
+void fs_ls() {
+    // Maps directory to its children
+    std::map<uint8_t, std::vector<uint8_t>> directory;
+
+    for (int i = 0; i < 126; i++) {
+        Inode * inode = &(super_block->inode[i]);
+        uint8_t parent_dir = get_parent_dir(*inode);
+
+        if (is_inode_used(*inode)) {
+            if (is_inode_dir(*inode)) {
+                auto it = directory.find(i);
+                if (it == directory.end()) { // directory is not in the map yet
+                    std::vector<uint8_t> directoryContents;
+                    directory.insert({i, directoryContents});
+                }
+            }
+
+            auto it = directory.find(parent_dir);
+            if (it != directory.end()) {
+                // directory in map
+                it->second.push_back(i);
+            } else {
+                // directory not in map
+                std::vector<uint8_t> directoryContents;
+                directoryContents.push_back(i);
+                directory.insert({parent_dir, directoryContents});
+            }
+
+        }
+    }
+
+    uint8_t parent_dir;
+    if (current_directory == ROOT) {
+        parent_dir = current_directory;
+    } else {
+        parent_dir = get_parent_dir(super_block->inode[current_directory]);
+    }
+    std::vector<uint8_t> current_contents =  directory.at(current_directory);
+    std::vector<uint8_t> parent_contents = directory.at(parent_dir);
+
+    printf("%-5s %3d\n", ".", (int) current_contents.size() + 2);
+    printf("%-5s %3d\n", "..", (int) parent_contents.size() + 2);
+
+    for (auto inode_index: current_contents) {
+        Inode * inode = &(super_block->inode[inode_index]);
+        if (is_inode_dir(*inode)) {
+            printf("%-5.5s %3d\n", inode->name, (int) directory.at(inode_index).size() + 2);
+        } else {
+            printf("%-5.5s %3d KB\n", inode->name, get_inode_size(*inode));
+        }
+    }
+
+}
+
 void fs_resize(char name[5], int new_size) {
     Inode * inode = NULL;
     for (int i = 0; i < 126; i++) {
@@ -782,8 +836,9 @@ bool runCommand(std::vector<std::string> arguments) {
             isValid = false;
         } else if (!isMounted) {
             std::cerr << "Error: No file system is mounted\n";
+        } else {
+            fs_ls();
         }
-        
     } else if (command.compare("E") == 0) {
         if (arguments.size() != 2) {
             isValid = false;
@@ -805,7 +860,6 @@ bool runCommand(std::vector<std::string> arguments) {
         } else {
             fs_defrag();
         }
-        
     } else if (command.compare("Y") == 0) {
         if (arguments.size() != 1) {
             isValid = false;
