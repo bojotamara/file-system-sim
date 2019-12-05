@@ -44,6 +44,16 @@ uint8_t buffer[BLOCK_SIZE] = {0};
 //     close(fd2);
 // }
 
+int safe_stoi(const std::string& str) {
+    int value;
+    try {
+        value = stoi(str);
+    } catch (...) {
+        value = -1;
+    }
+    return value;
+}
+
 std::vector<int> get_contiguous_blocks(int size, int start_block = 1, int end_block = 128) {
     // Find the first set of contiguous blocks that can be allocated to the file by scanning
     // data blocks from 1 to 127.
@@ -482,7 +492,7 @@ bool runCommand(std::vector<std::string> arguments) {
             isValid = false;
         } else if (arguments[0].size() > 5) {
             isValid = false;
-        } else if (stoi(arguments[1]) < 0 || stoi(arguments[1]) > 127) {
+        } else if (safe_stoi(arguments[1]) < 0 || safe_stoi(arguments[1]) > 127) {
             isValid = false;
         } else if (!isMounted) {
             std::cerr << "Error: No file system is mounted\n";
@@ -506,7 +516,7 @@ bool runCommand(std::vector<std::string> arguments) {
             isValid = false;
         } else if (arguments[0].size() > 5) {
             isValid = false;
-        } else if (stoi(arguments[1]) < 0 || stoi(arguments[1]) > 126) {
+        } else if (safe_stoi(arguments[1]) < 0 || safe_stoi(arguments[1]) > 126) {
             isValid = false;
         } else if (!isMounted) {
             std::cerr << "Error: No file system is mounted\n";
@@ -519,7 +529,7 @@ bool runCommand(std::vector<std::string> arguments) {
             isValid = false;
         } else if (arguments[0].size() > 5) {
             isValid = false;
-        } else if (stoi(arguments[1]) < 0 || stoi(arguments[1]) > 126) {
+        } else if (safe_stoi(arguments[1]) < 0 || safe_stoi(arguments[1]) > 126) {
             isValid = false;
         } else if (!isMounted) {
             std::cerr << "Error: No file system is mounted\n";
@@ -556,7 +566,7 @@ bool runCommand(std::vector<std::string> arguments) {
             isValid = false;
         } else if (arguments[0].size() > 5) {
             isValid = false;
-        } else if (stoi(arguments[1]) < 1 || stoi(arguments[1]) > 127) {
+        } else if (safe_stoi(arguments[1]) < 1 || safe_stoi(arguments[1]) > 127) {
             isValid = false;
         } else if (!isMounted) {
             std::cerr << "Error: No file system is mounted\n";
