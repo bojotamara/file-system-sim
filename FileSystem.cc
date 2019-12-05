@@ -358,8 +358,8 @@ void fs_mount(char *new_disk_name) {
         disk_name = new_disk_name;
         current_directory = ROOT;
     } else {
-        std::cout << "Error: File system in " << new_disk_name << " is inconsistent";
-        std::cout << " (error code: " << errorCode << ")\n";
+        std::cerr << "Error: File system in " << new_disk_name << " is inconsistent";
+        std::cerr << " (error code: " << errorCode << ")\n";
         delete temp_super_block;
     }
 
@@ -583,14 +583,23 @@ void fs_ls() {
         }
     }
 
-    uint8_t parent_dir;
-    if (current_directory == ROOT) {
-        parent_dir = current_directory;
-    } else {
-        parent_dir = get_parent_dir(super_block->inode[current_directory]);
+    std::vector<uint8_t> current_contents;
+    std::vector<uint8_t> parent_contents;
+
+    auto it_current = directory.find(current_directory);
+    if (it_current != directory.end()) {
+        current_contents =  it_current->second;
     }
-    std::vector<uint8_t> current_contents =  directory.at(current_directory);
-    std::vector<uint8_t> parent_contents = directory.at(parent_dir);
+
+    if (current_directory == ROOT) {
+        parent_contents = current_contents;
+    } else {
+        uint8_t parent_dir = get_parent_dir(super_block->inode[current_directory]);
+        auto it_parent = directory.find(parent_dir);
+        if (it_parent != directory.end()) {
+            parent_contents =  it_parent->second;
+        }
+    }
 
     printf("%-5s %3d\n", ".", (int) current_contents.size() + 2);
     printf("%-5s %3d\n", "..", (int) parent_contents.size() + 2);
@@ -598,7 +607,12 @@ void fs_ls() {
     for (auto inode_index: current_contents) {
         Inode * inode = &(super_block->inode[inode_index]);
         if (is_inode_dir(*inode)) {
-            printf("%-5.5s %3d\n", inode->name, (int) directory.at(inode_index).size() + 2);
+            int num_children = 0;
+            auto it = directory.find(inode_index);
+            if (it != directory.end()) {
+                num_children = it->second.size();
+            }
+            printf("%-5.5s %3d\n", inode->name, num_children + 2);
         } else {
             printf("%-5.5s %3d KB\n", inode->name, get_inode_size(*inode));
         }
