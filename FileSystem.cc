@@ -152,7 +152,6 @@ void copy_file_to_blocks(Inode * inode, std::vector<int> destination_blocks) {
     for (auto block: destination_blocks) {
         allocate_block_in_free_list(block);
     }
-    //TODO: IF PERFORMANCE IS BAD MIGHT HAVE 2 change
     int currentSize = get_inode_size(*inode);
     int destinationIndex = 0;
     int fd = open(disk_name.c_str(), O_RDWR);
