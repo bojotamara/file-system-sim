@@ -40,6 +40,11 @@ uint8_t get_parent_dir(Inode inode) {
     return (inode.dir_parent & ~(1UL << 7));
 }
 
+void set_inode_size(Inode * inode, int size) {
+    inode->used_size = (uint8_t) size;
+    inode->used_size |= 1UL << 7; // set most significant bit
+}
+
 bool is_name_set(Inode inode) {
     for (int i = 0; i < 5; i++) {
         if (inode.name[i] != 0) {
@@ -118,6 +123,47 @@ void read_from_block(uint8_t buff[BLOCK_SIZE], int block_number) {
         std::cerr << "Error: Reading block from disk\n";
     }
     close(fd);
+}
+
+std::vector<int> get_contiguous_blocks(int size, int start_block = 1, int end_block = 128) {
+    // Find the first set of contiguous blocks that can be allocated to the file by scanning
+    // data blocks from 1 to 127.
+    std::vector<int> contiguous_blocks;
+    int block_number = start_block;
+    while (block_number < end_block) {
+        int free_block_list_index = block_number/8;
+        int bit_number = 7 - (block_number % 8);
+        char byte = super_block->free_block_list[free_block_list_index];
+
+        int bit = ((byte >> bit_number) & 1);
+        if (bit == 0) {
+            contiguous_blocks.push_back(block_number);
+        } else if (bit == 1) {
+            contiguous_blocks.clear();
+        }
+        if ((int)contiguous_blocks.size() == size) {
+            return contiguous_blocks;
+        }
+        block_number++;
+    }
+    contiguous_blocks.clear();
+    return contiguous_blocks;
+}
+
+void copy_file_to_blocks(Inode * inode, std::vector<int> destination_blocks) {
+    for (auto block: destination_blocks) {
+        allocate_block_in_free_list(block);
+    }
+    //TODO: IF PERFORMANCE IS BAD MIGHT HAVE 2 change
+    int currentSize = get_inode_size(*inode);
+    int destinationIndex = 0;
+    for (int i = inode->start_block; i < inode->start_block + currentSize; i++) {
+        uint8_t buff[BLOCK_SIZE] = {0};
+        read_from_block(buff, i);
+        write_to_block(buff, destination_blocks[destinationIndex]);
+        destinationIndex++;
+    }
+    inode->start_block = destination_blocks[0];
 }
 
 // Blocks that are marked free in the free-space list cannot be allocated to any file. Similarly, blocks
@@ -361,34 +407,9 @@ void fs_create(char name[5], int size) {
     std::vector<int> contiguous_blocks;
     // If it's a file, we have to allocate space
     if (size != 0) {
-        // Find the first set of contiguous blocks that can be allocated to the file by scanning
-        // data blocks from 1 to 127.
-        int block_number = 0;
-        for (int i = 0; i < 16; i++) {
-            char byte = super_block->free_block_list[i];
-            for (int j=7; j>=0; j--) {
-                if (block_number == 0) {// this is the superblock
-                    block_number++;
-                    continue;
-                }
-                int bit = ((byte >> j) & 1);
-                if (bit == 0) {
-                    contiguous_blocks.push_back(block_number);
-                } else if (bit == 1) {
-                    contiguous_blocks.clear();
-                }
-                if ((int)contiguous_blocks.size() == size) {
-                    break;
-                }
-                block_number++;
-            }
+        contiguous_blocks = get_contiguous_blocks(size);
 
-            if ((int)contiguous_blocks.size() == size) {
-                break;
-            }
-        }
-
-        if ((int)contiguous_blocks.size() != size) {
+        if (contiguous_blocks.empty()) {
             std::cerr << "Error: Cannot allocate " << size << " on " << disk_name << std::endl;
             return;
         }
@@ -406,8 +427,8 @@ void fs_create(char name[5], int size) {
         available_inode->dir_parent &= ~(1UL << 7);
         available_inode->start_block = contiguous_blocks[0];
     }
-    available_inode->used_size = (uint8_t) size;
-    available_inode->used_size |= 1UL << 7; // set most significant bit
+
+    set_inode_size(available_inode, size);
     strncpy(available_inode->name, name, 5);
 
     write_superblock_to_disk();
@@ -527,6 +548,64 @@ void fs_buff(uint8_t buff[1024], int size) {
         buffer[i] = 0;
     }
     memcpy(buffer, buff, size);
+}
+
+void fs_resize(char name[5], int new_size) {
+    Inode * inode = NULL;
+    for (int i = 0; i < 126; i++) {
+        inode = &(super_block->inode[i]);
+        if (is_inode_used(*inode) &&
+                    !is_inode_dir(*inode) &&
+                    get_parent_dir(*inode) == current_directory &&
+                    strncmp(name, inode->name, 5) == 0) {
+            break;
+        }
+        inode = NULL;
+    }
+
+    if (inode == NULL) {
+        std::cerr << "Error: File " << name << " does not exist\n";
+        return;
+    }
+
+    int current_size = get_inode_size(*inode);
+    if (new_size < current_size) {
+        uint8_t buff[BLOCK_SIZE] = {0};
+        for (int i = inode->start_block + new_size; i < inode->start_block + current_size; i++) {
+            write_to_block(buff, i);
+            free_block_in_free_list(i);
+        }
+    } else if (new_size > current_size) {
+        std::vector<int> contiguous_blocks = get_contiguous_blocks(new_size - current_size, inode->start_block + current_size, inode->start_block + new_size);
+
+        //Not enough blocks in the next blocks
+        if (contiguous_blocks.empty()) {
+            for (int i = inode->start_block; i < inode->start_block + current_size; i++) {
+                free_block_in_free_list(i);
+            }
+            contiguous_blocks = get_contiguous_blocks(new_size);
+            if (contiguous_blocks.empty()) {
+                for (int i = inode->start_block; i < inode->start_block + current_size; i++) {
+                    allocate_block_in_free_list(i);
+                }
+                std::cerr << "Error: File " << name << " cannot expand to size " << new_size << std::endl;
+                return;
+            } else {
+                copy_file_to_blocks(inode, contiguous_blocks);
+            }
+        } else {// Enough blocks available
+            uint8_t buff[BLOCK_SIZE] = {0};
+            for (auto block: contiguous_blocks) {
+                write_to_block(buff, block);
+                allocate_block_in_free_list(block);
+            }
+        }
+    } else {
+        return;
+    }
+
+    set_inode_size(inode, new_size);
+    write_superblock_to_disk();
 }
 
 void fs_cd(char name[5]) {
@@ -656,8 +735,10 @@ bool runCommand(std::vector<std::string> arguments) {
             isValid = false;
         } else if (!isMounted) {
             std::cerr << "Error: No file system is mounted\n";
+        } else {
+            char * cstr = &(arguments[0][0]);
+            fs_resize(cstr, stoi(arguments[1]));
         }
-        
     } else if (command.compare("O") == 0) {
         if (arguments.size() != 0) {
             isValid = false;
