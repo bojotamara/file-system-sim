@@ -13,10 +13,6 @@
 #include "InodeHelper.h"
 #include "Util.h"
 
-// Constants
-#define ROOT 127
-#define BLOCK_SIZE 1024
-
 // Global variables
 Super_block * super_block = NULL;
 std::string disk_name = "";

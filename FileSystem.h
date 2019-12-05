@@ -3,6 +3,10 @@
 #include <stdio.h>
 #include <stdint.h>
 
+// Constants
+#define ROOT 127
+#define BLOCK_SIZE 1024
+
 typedef struct {
 	char name[5];        // Name of the file or directory
 	uint8_t used_size;   // Inode state and the size of the file or directory
