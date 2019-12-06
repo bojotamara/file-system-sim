@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <string.h>
 
+#include "IO.h"
 #include "InodeHelper.h"
 #include "ConsistencyCheck.h"
 
@@ -13,22 +14,16 @@
 bool consistency_check_1(Super_block * super_block) {
     std::set<int> free_blocks;
     std::set<int> used_blocks;
-    int block_number = 0;
-    for (int i = 0; i < 16; i++) {
-        char byte = super_block->free_block_list[i];
-        for (int j=7; j>=0; j--) {
-            if (block_number == 0) {// this is the superblock
-                block_number++;
-                continue;
-            }
-            int bit = ((byte >> j) & 1);
-            if (bit == 0) {
-                free_blocks.insert(block_number);
-            } else if (bit == 1) { // In use
-                used_blocks.insert(block_number);
-            }
-            block_number++;
+
+    int block_number = 1;
+    while (block_number < 128) {
+        if (is_block_free(block_number, super_block)) {
+            free_blocks.insert(block_number);
+        } else {
+            used_blocks.insert(block_number);
         }
+
+        block_number++;
     }
 
     std::vector<int> inode_used_blocks;
@@ -137,10 +132,11 @@ bool consistency_check_6(Super_block * super_block) {
     for (int i = 0; i < 126; i++) {
         Inode inode = super_block->inode[i];
         if (is_inode_used(inode)) {
-            if (inode.dir_parent == 126) {
+            uint8_t parent_dir = get_parent_dir(inode);
+            if (parent_dir == 126) {
                 return false;
-            } else if (inode.dir_parent >= 0 && inode.dir_parent <= 125) {
-                Inode parent_inode = super_block->inode[inode.dir_parent];
+            } else if (parent_dir >= 0 && parent_dir <= 125) {
+                Inode parent_inode = super_block->inode[parent_dir];
                 if (!is_inode_used(parent_inode) || !is_inode_dir(parent_inode)) {
                     return false;
                 }

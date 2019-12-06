@@ -254,7 +254,7 @@ void fs_write(char name[5], int block_num) {
 
 void fs_buff(uint8_t buff[1024], int size) {
     //Flush the buffer
-    for (int i = 0; i < BLOCK_SIZE; i ++) {
+    for (int i = 0; i < BLOCK_SIZE; i++) {
         buffer[i] = 0;
     }
     memcpy(buffer, buff, size);
