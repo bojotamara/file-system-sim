@@ -9,8 +9,14 @@
 #include "ConsistencyCheck.h"
 
 
-// Blocks that are marked free in the free-space list cannot be allocated to any file. Similarly, blocks
-// marked in use in the free-space list must be allocated to exactly one file.
+/**
+ * @brief Performs the first consistency check. Blocks that are marked free in the free-space list
+ * cannot be allocated to any file. Similarly, blocks marked in use in the free-space list must be
+ * allocated to exactly one file.
+ *
+ * @param super_block - The super_block to check
+ * @return True if the consistency check passes. False otherwise
+ */
 bool consistency_check_1(Super_block * super_block) {
     std::set<int> free_blocks;
     std::set<int> used_blocks;
@@ -49,7 +55,13 @@ bool consistency_check_1(Super_block * super_block) {
     return true;
 }
 
-// The name of every file/directory must be unique in each directory
+/**
+ * @brief Performs the second consistency check. The name of every file/directory must be
+ * unique in each directory
+ *
+ * @param super_block - The super_block to check
+ * @return True if the consistency check passes. False otherwise
+ */
 bool consistency_check_2(Super_block * super_block) {
     std::map<uint8_t, std::vector<Inode>> directory;
 
@@ -77,8 +89,14 @@ bool consistency_check_2(Super_block * super_block) {
     return true;
 }
 
-// If the state of an inode is free, all bits in this inode must be zero. Otherwise, the name attribute stored
-// in the inode must have at least one bit that is not zero.
+/**
+ * @brief Performs the third consistency check. If the state of an inode is free,
+ * all bits in this inode must be zero. Otherwise, the name attribute stored in
+ * the inode must have at least one bit that is not zero.
+ *
+ * @param super_block - The super_block to check
+ * @return True if the consistency check passes. False otherwise
+ */
 bool consistency_check_3(Super_block * super_block) {
     for (int i = 0; i < 126; i++) {
         Inode inode = super_block->inode[i];
@@ -104,7 +122,13 @@ bool consistency_check_3(Super_block * super_block) {
     return true;
 }
 
-// The start block of every inode that is marked as a file must have a value between 1 and 127 inclusive
+/**
+ * @brief Performs the fourth consistency check. The start block of every inode that is marked as a
+ * file must have a value between 1 and 127 inclusive.
+ *
+ * @param super_block - The super_block to check
+ * @return True if the consistency check passes. False otherwise.
+ */
 bool consistency_check_4(Super_block * super_block) {
     for (int i = 0; i < 126; i++) {
         Inode inode = super_block->inode[i];
@@ -115,7 +139,13 @@ bool consistency_check_4(Super_block * super_block) {
     return true;
 }
 
-// The size and start block of an inode that is marked as a directory must be zero.
+/**
+ * @brief Performs the fifth consistency check. The size and start block of an inode
+ * that is marked as a directory must be zero.
+ *
+ * @param super_block - The super_block to check
+ * @return True if the consistency check passes. False otherwise.
+ */
 bool consistency_check_5(Super_block * super_block) {
     for (int i = 0; i < 126; i++) {
         Inode inode = super_block->inode[i];
@@ -126,8 +156,14 @@ bool consistency_check_5(Super_block * super_block) {
     return true;
 }
 
-// For every inode, the index of its parent inode cannot be 126. Moreover, if the index of the parent inode
-// is between 0 and 125 inclusive, then the parent inode must be in use and marked as a directory.
+/**
+ * @brief Performs the sixth consistency check. For every inode, the index of its
+ * parent inode cannot be 126. Moreover, if the index of the parent inode is between
+ * 0 and 125 inclusive, then the parent inode must be in use and marked as a directory.
+ *
+ * @param super_block - The super_block to check
+ * @return True if the consistency check passes. False otherwise.
+ */
 bool consistency_check_6(Super_block * super_block) {
     for (int i = 0; i < 126; i++) {
         Inode inode = super_block->inode[i];
@@ -146,6 +182,13 @@ bool consistency_check_6(Super_block * super_block) {
     return true;
 }
 
+/**
+ * @brief Checks if the provided super_block is consistent. Performs 6 different
+ * checks. Returns the error code of the check that failed.
+ *
+ * @param super_block - The super_block to check
+ * @return The error code of the check that failed
+ */
 int check_consistency(Super_block * super_block) {
     int errorCode = 0;
 
