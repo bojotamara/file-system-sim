@@ -13,35 +13,54 @@ $ ./fs <input_file>
 These are the command that are supported in the input file
 
 - `M` - Mount the file system residing on the disk (results in the invocation of fs mount)
-...Usage: `M <disk name>`
-...Description: Mounts the file system for the given virtual disk (file) and sets the current working directory to root.
+
+   Usage: `M <disk name>`  
+   Description: Mounts the file system for the given virtual disk (file) and sets the current working directory to root.
+
 - `C` - Create file (results in the invocation of fs create)
-...Usage: `C <file name> <file size>`
-...Description: Creates a new file with the provided name in the current working directory.
+
+   Usage: `C <file name> <file size>`  
+   Description: Creates a new file with the provided name in the current working directory.
+
 - `D` - Delete file (results in the invocation of fs delete)
-...Usage: `D <file name>`
-...Description: Deletes the specified file from the current working directory.
+
+   Usage: `D <file name>`  
+   Description: Deletes the specified file from the current working directory.
+
 - `R` - Read file (results in the invocation of fs read)
-...Usage: `R <file name> <block number>`
-...Description: Reads the block number-th block from the specified file into the buffer.
+
+   Usage: `R <file name> <block number>`  
+   Description: Reads the block number-th block from the specified file into the buffer.
+
 - `W` - Write file (results in the invocation of fs write)
-...Usage: `W <file name> <block number>`
-...Description: Writes the data in the buffer to the block number-th block of the specified file.
+
+   Usage: `W <file name> <block number>`  
+   Description: Writes the data in the buffer to the block number-th block of the specified file.
+
 - `B` - Update buffer (results in the invocation of fs buff)
-...Usage: `B <new buffer characters>`
-...Description: Updates the buffer with the provided characters. Up to 1024 characters can be provided. If fewer characters are provided, the remaining bytes (at the end of the buffer) are set to 0.
+
+   Usage: `B <new buffer characters>`  
+   Description: Updates the buffer with the provided characters. Up to 1024 characters can be provided. If fewer characters are provided, the remaining bytes (at the end of the buffer) are set to 0.
+
 - `L` - List files (results in the invocation of fs ls)
-...Usage: `L`
-...Description: Lists all the files/directories in the current working directory, including . and ..
+
+   Usage: `L`  
+   Description: Lists all the files/directories in the current working directory, including . and ..
+
 - `E` - Change files size (results in the invocation of fs resize)
-...Usage: `E <file name> <new size>`
-...Description: Changes the size of the given file. If the file size is reduced, the extra blocks must be deleted(zeroed out).
+
+   Usage: `E <file name> <new size>`  
+   Description: Changes the size of the given file. If the file size is reduced, the extra blocks must be deleted(zeroed out).
+
 - `O` - Defragment the disk (results in the invocation of fs defrag)
-...Usage: `O`
-...Description: Defragments the disk, moving used blocks toward the superblock while maintaining the file data. As a result of performing defragmentation, contiguous free blocks can be created.
+
+   Usage: `O`  
+   Description: Defragments the disk, moving used blocks toward the superblock while maintaining the file data. As a result of performing defragmentation, contiguous free blocks can be created.
+
 - `Y` - Change the current working directory (results in the invocation of fs cd)
-...Usage: `Y <directory name>`
-...Description: Updates the current working directory to the provided directory. This new directory can be either a subdirectory in the current working directory or the parent of the current working directory
+
+   Usage: `Y <directory name>`  
+   Description: Updates the current working directory to the provided directory. This new directory can be either a subdirectory in the current working directory or the parent of the current working directory
 
 ### Design Choices
 The file system was designed with modularity and the DRY (Don't Repeat Yourself) principle in mind. A lot of operations were very common and repeated often (especially bit manipulation) so they were separated into common functions/files so they could be used again and again. This was done so that if the code needs to be changed, it is more maintainable and only needs to be changed in one place and doesn't impact the rest of the code. The code is divided into 5 main files: `FileSystem.cc`, `ConsistencyCheck.cc`, `IO.cc`, `InodeHelper.cc`  and `Util.cc`. `FileSystem.cc` contains the main functionality of the program, with the other files being "helper" files. The "helper" files contain commonly used functions that the other files make use of.
