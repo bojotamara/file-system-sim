@@ -63,6 +63,7 @@ bool consistency_check_1(Super_block * super_block) {
  * @return True if the consistency check passes. False otherwise
  */
 bool consistency_check_2(Super_block * super_block) {
+    // Maps directories to the files/directories within them
     std::map<uint8_t, std::vector<Inode>> directory;
 
     for (int i = 0; i < 126; i++) {
@@ -108,7 +109,7 @@ bool consistency_check_3(Super_block * super_block) {
                 }
             }
             return false;
-        } else {//inode free
+        } else {
             if (inode.dir_parent != 0 || inode.start_block != 0 || inode.used_size != 0) {
                 return false;
             }
