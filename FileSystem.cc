@@ -44,6 +44,12 @@ uint8_t buffer[BLOCK_SIZE] = {0};
 //     close(fd2);
 // }
 
+/**
+ * @brief A wrapper for the stoi function that returns -1 if an exception is thrown.
+ * 
+ * @param str - The string to convert to an integer
+ * @return The integer conversion of the string, or -1 if an exception was thrown.
+ */
 int safe_stoi(const std::string& str) {
     int value;
     try {
@@ -54,8 +60,17 @@ int safe_stoi(const std::string& str) {
     return value;
 }
 
+/**
+ * @brief Gets a vector of contiguous blocks, starting at the start block and ending 1 before the
+ * end block. Looks through the free list of the superblock.
+ * 
+ * @param size - The size or number of blocks to find
+ * @param start_block - Block to start the search at - default is 1
+ * @param end_block - Block to end the search at - default is 128
+ * @return The vector of contiguous blocks. Can be empty.
+ */
 std::vector<int> get_contiguous_blocks(int size, int start_block = 1, int end_block = 128) {
-    // Find the first set of contiguous blocks that can be allocated to the file by scanning
+    // Find the first set of contiguous blocks that can be allocated by scanning
     // data blocks from 1 to 127.
     std::vector<int> contiguous_blocks;
     int block_number = start_block;
@@ -65,7 +80,7 @@ std::vector<int> get_contiguous_blocks(int size, int start_block = 1, int end_bl
         } else {
             contiguous_blocks.clear();
         }
-        if ((int)contiguous_blocks.size() == size) {
+        if ((int) contiguous_blocks.size() == size) {
             return contiguous_blocks;
         }
         block_number++;
@@ -74,6 +89,12 @@ std::vector<int> get_contiguous_blocks(int size, int start_block = 1, int end_bl
     return contiguous_blocks;
 }
 
+/**
+ * @brief Mounts the file system residing on the virtual disk with the specified name. Involves making
+ * consistency checks before the file is mounted.
+ * 
+ * @param new_disk_name - The name of the disk to mount
+ */
 void fs_mount(char *new_disk_name) {
     struct stat sb;
 
@@ -113,6 +134,13 @@ void fs_mount(char *new_disk_name) {
     close(fd);
 }
 
+/**
+ * @brief Creates a new file or directory in the current working directory with the given name
+ * and the given number of blocks, and stores the attributes in the first available inode.
+ * 
+ * @param name - The name of the new file/directory
+ * @param size - The desired size of the new file. 0 if it's a directory.
+ */
 void fs_create(char name[5], int size) {
     // Need to find first available inode
     Inode * available_inode = NULL;
@@ -149,8 +177,8 @@ void fs_create(char name[5], int size) {
         }
     }
 
-    std::vector<int> contiguous_blocks;
     // If it's a file, we have to allocate space
+    std::vector<int> contiguous_blocks;
     if (size != 0) {
         contiguous_blocks = get_contiguous_blocks(size);
 
@@ -165,10 +193,10 @@ void fs_create(char name[5], int size) {
     }
 
     available_inode->dir_parent = current_directory;
-    if (size == 0) {// set bit
+    if (size == 0) {// It's a directory, first bit of dir_parent should be 1
         available_inode->dir_parent |= 1UL << 7;
         available_inode->start_block = 0;
-    } else {// clear bit
+    } else {// It's a file, first bit of dir_parent should be 0
         available_inode->dir_parent &= ~(1UL << 7);
         available_inode->start_block = contiguous_blocks[0];
     }
@@ -179,6 +207,12 @@ void fs_create(char name[5], int size) {
     write_superblock_to_disk(disk_name, super_block);
 }
 
+/**
+ * @brief Deletes the file or directory with the given name in the current working directory.
+ * If the name represents a directory, all files and directories within are recursively deleted.
+ * 
+ * @param name - The name of the file/directory to delete
+ */
 void fs_delete(char name[5]) {
     Inode * inode = NULL;
     int inodeIndex;
@@ -204,6 +238,12 @@ void fs_delete(char name[5]) {
     write_superblock_to_disk(disk_name, super_block);
 }
 
+/**
+ * @brief Opens the file with the given name and reads the block num-th block of the file into the buffer.
+ * 
+ * @param name - The name of the file/directory to open and read
+ * @param block_num - The block of the file to read into the buffer
+ */
 void fs_read(char name[5], int block_num) {
     Inode * inode = NULL;
     for (int i = 0; i < 126; i++) {
@@ -223,11 +263,19 @@ void fs_read(char name[5], int block_num) {
         std::cerr << "Error: " << name << " does not have block " << block_num << std::endl;
         return;
     }
+
     int fd = open(disk_name.c_str(), O_RDWR);
     read_from_block(fd, buffer, inode->start_block + block_num);
     close(fd);
 }
 
+/**
+ * @brief Opens the file with the given name and writes the content of the buffer to the
+ * block num-th block of the file.
+ *  
+ * @param name - The name of the file/directory to write to
+ * @param block_num - The block of the file to write to
+ */
 void fs_write(char name[5], int block_num) {
     Inode * inode = NULL;
     for (int i = 0; i < 126; i++) {
@@ -252,18 +300,30 @@ void fs_write(char name[5], int block_num) {
     close(fd);
 }
 
-void fs_buff(uint8_t buff[1024], int size) {
-    //Flush the buffer
+/**
+ * @brief Flushes the buffer by setting it to zero and writes the new bytes into the buffer.
+ * 
+ * @param buff - The new bytes to write into the buffer
+ * @param size - The size of buff
+ */
+void fs_buff(uint8_t buff[BLOCK_SIZE], int size) {
+    // Flush the buffer
     for (int i = 0; i < BLOCK_SIZE; i++) {
         buffer[i] = 0;
     }
     memcpy(buffer, buff, size);
 }
 
+/**
+ * @brief Lists all files and directories that exist in the current directory, including
+ * special directories . and .. which represent the current working directory and the parent
+ * directory of the current working directory, respectively.
+ */
 void fs_ls() {
     // Maps directory to its children
     std::map<uint8_t, std::vector<uint8_t>> directory;
 
+    // Build the directory map by looping through the inodes
     for (int i = 0; i < 126; i++) {
         Inode * inode = &(super_block->inode[i]);
         uint8_t parent_dir = get_parent_dir(*inode);
@@ -271,7 +331,8 @@ void fs_ls() {
         if (is_inode_used(*inode)) {
             if (is_inode_dir(*inode)) {
                 auto it = directory.find(i);
-                if (it == directory.end()) { // directory is not in the map yet
+                if (it == directory.end()) {
+                    // directory is not in the map yet
                     std::vector<uint8_t> directoryContents;
                     directory.insert({i, directoryContents});
                 }
@@ -299,6 +360,7 @@ void fs_ls() {
         current_contents =  it_current->second;
     }
 
+    // In the case of the root directory, its parent is itself
     if (current_directory == ROOT) {
         parent_contents = current_contents;
     } else {
@@ -328,6 +390,12 @@ void fs_ls() {
 
 }
 
+/**
+ * @brief Changes the size of the file with the given name to a new size.
+ * 
+ * @param name - The name of the file to resize
+ * @param new_size - The desired new size of the file
+ */
 void fs_resize(char name[5], int new_size) {
     Inode * inode = NULL;
     for (int i = 0; i < 126; i++) {
@@ -358,7 +426,7 @@ void fs_resize(char name[5], int new_size) {
     } else if (new_size > current_size) {
         std::vector<int> contiguous_blocks = get_contiguous_blocks(new_size - current_size, inode->start_block + current_size, inode->start_block + new_size);
 
-        //Not enough blocks in the next blocks
+        // Not enough blocks in the next blocks
         if (contiguous_blocks.empty()) {
             for (int i = inode->start_block; i < inode->start_block + current_size; i++) {
                 free_block_in_free_list(i, super_block);
@@ -390,7 +458,13 @@ void fs_resize(char name[5], int new_size) {
     write_superblock_to_disk(disk_name, super_block);
 }
 
+/**
+ * @brief Re-organizes the file blocks such that there is no free block between the used blocks,
+ * and between the superblock and the used blocks. Shifts all the blocks to the left, starting with the
+ * leftmost block
+ */
 void fs_defrag() {
+    // Sort the inodes based on position (lower starting blocks should go first)
     std::map<uint8_t, Inode*> sortedInodes;
     for (int i = 0; i < 126; i++) {
         Inode * inode = &(super_block->inode[i]);
@@ -442,6 +516,12 @@ void fs_defrag() {
     }
 }
 
+/**
+ * @brief Changes the current working directory to a directory with the specified name in the
+ * current working directory.
+ * 
+ * @param name - The name of the directory to move into
+ */
 void fs_cd(char name[5]) {
     if (strncmp(name, ".", 5) == 0) {
         // Stay at the current directory
@@ -473,6 +553,13 @@ void fs_cd(char name[5]) {
     }
 }
 
+/**
+ * @brief Run the command provided. Check if the command is valid (eg. right # of arguments, correct range
+ * of values).
+ * 
+ * @param arguments - The command to run, tokenized already by spaces
+ * @return True if the command is valid and will run, false otherwise.
+ */
 bool runCommand(std::vector<std::string> arguments) {
     // Separate out the command and the arguments
     std::string command = arguments[0];
@@ -622,6 +709,8 @@ int main(int argc, char **argv) {
     while (getline(command_file, command)) {
         line_number++;
         std::vector<std::string> arguments;
+
+        // We have to parse the "B" command different, since the buffer message can have spaces
         if (command.at(0) == 'B') {
             char * command_cstr = const_cast<char*> (command.c_str());
             char * command_first_arg = strsep(&command_cstr, " ");
@@ -632,6 +721,7 @@ int main(int argc, char **argv) {
         } else {
             arguments = tokenize(command, " ");
         }
+
         if (runCommand(arguments) == false) {
             std::cerr << "Command Error: " << command_file_name << ", " << line_number << std::endl;
         }
@@ -642,7 +732,6 @@ int main(int argc, char **argv) {
     }
 
     command_file.close();
-    // print_superblock();
 
     return 0;
 }
