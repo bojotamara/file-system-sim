@@ -122,6 +122,9 @@ void fs_mount(char *new_disk_name) {
     int errorCode = check_consistency(temp_super_block);
 
     if (errorCode == 0) {
+        if (super_block != NULL) {
+            delete super_block;
+        }
         super_block = temp_super_block;
         disk_name = new_disk_name;
         current_directory = ROOT;
