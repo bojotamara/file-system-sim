@@ -371,7 +371,7 @@ void fs_resize(char name[5], int new_size) {
                 std::cerr << "Error: File " << name << " cannot expand to size " << new_size << std::endl;
                 return;
             } else {
-                copy_file_to_blocks(inode, disk_name, super_block, contiguous_blocks);
+                move_file_to_blocks(inode, disk_name, super_block, contiguous_blocks);
             }
         } else {// Enough blocks available
             uint8_t buff[BLOCK_SIZE] = {0};
